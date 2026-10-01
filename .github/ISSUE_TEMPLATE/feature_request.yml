@@ -1,0 +1,22 @@
+name: 💡 Proponer una mejora
+description: Una idea o funcionalidad nueva
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: ¿Qué problema resolvería?
+      description: Describe la situación en la que la echas de menos.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Propuesta
+      description: Cómo te imaginas que funcionaría (herramienta MCP, comando, dashboard…).
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternativas consideradas

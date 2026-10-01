@@ -1,6 +1,13 @@
 # multi-agents
 
-**Haz que varios agentes de IA trabajen juntos, en paralelo y desde distintas PCs, sobre el mismo proyecto.**
+[![CI](https://github.com/toroc07/multi-agents/actions/workflows/ci.yml/badge.svg)](https://github.com/toroc07/multi-agents/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Node.js >= 20](https://img.shields.io/badge/node-%3E%3D20-339933?logo=node.js&logoColor=white)
+[![MCP](https://img.shields.io/badge/MCP-compatible-6E56CF)](https://modelcontextprotocol.io)
+
+**Haz que varios agentes de IA trabajen juntos, en paralelo, sobre el mismo proyecto, en una sola PC o en varias.**
+
+![Dashboard de multi-agents con varios agentes coordinándose](docs/images/dashboard.png)
 
 Claude Code, Codex, OpenCode, Gemini CLI, Aider o un script propio: da igual qué agente use cada puesto, ni si están en la misma PC o en máquinas distintas. Con `multi-agents` todos se conectan a un **hub** común donde pueden:
 

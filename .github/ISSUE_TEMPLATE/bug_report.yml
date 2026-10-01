@@ -1,0 +1,59 @@
+name: 🐛 Reportar un error
+description: Algo no funciona como debería
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Gracias por reportarlo. Si es un problema de seguridad, **no** lo publiques aquí; sigue [SECURITY.md](https://github.com/toroc07/multi-agents/blob/main/SECURITY.md).
+  - type: textarea
+    id: what
+    attributes:
+      label: ¿Qué pasó?
+      description: Describe el error y qué esperabas que ocurriera.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Pasos para reproducirlo
+      placeholder: |
+        1. multi-agents hub --token ...
+        2. multi-agents init --client ...
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Salida o logs relevantes
+      description: Salida del hub, errores de la CLI o lo que muestre el cliente de IA. Quita el token antes de pegarlo.
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: Versión de multi-agents
+      placeholder: "multi-agents --version → 0.1.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: client
+    attributes:
+      label: Cliente de IA
+      multiple: true
+      options:
+        - Claude Code
+        - Codex
+        - OpenCode
+        - Gemini CLI
+        - Cursor
+        - Cline
+        - Goose
+        - CLI (sin MCP)
+        - Otro
+  - type: input
+    id: env
+    attributes:
+      label: Sistema operativo y versión de Node
+      placeholder: "Windows 11, Node 22.12"
+    validations:
+      required: true
