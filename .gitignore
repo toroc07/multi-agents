@@ -1,0 +1,9 @@
+node_modules/
+dist/
+data/
+coverage/
+*.log
+.DS_Store
+
+# Configuración local de multi-agents (contiene el token del hub)
+.multi-agents.json
