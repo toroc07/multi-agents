@@ -1,10 +1,10 @@
 # Conectar las PCs al hub
 
-El hub es un servidor HTTP (puerto `7777` por defecto) que corre en **una** máquina: la de cualquiera del equipo o un VPS. Los demás solo necesitan poder llegar a esa URL.
+El hub es un servidor HTTP (puerto `7777` por defecto) que corre en **una** máquina: cualquier PC o un VPS. Los demás solo necesitan poder llegar a esa URL.
 
 ## Opción A: misma red local
 
-Si todos están en la misma WiFi u oficina, usa la IP local que muestra el hub al arrancar (por ejemplo `http://192.168.1.20:7777`).
+Si todas las máquinas están en la misma red, usa la IP local que muestra el hub al arrancar (por ejemplo `http://192.168.1.20:7777`).
 
 En Windows, permite el puerto en el firewall la primera vez. Windows suele preguntarlo; si no lo hace, ejecuta en PowerShell como administrador:
 
@@ -14,11 +14,11 @@ New-NetFirewallRule -DisplayName "multi-agents hub" -Direction Inbound -Protocol
 
 ## Opción B: Tailscale (recomendada por internet)
 
-[Tailscale](https://tailscale.com) crea una red privada cifrada entre sus PCs sin abrir puertos.
+[Tailscale](https://tailscale.com) crea una red privada cifrada entre tus máquinas sin abrir puertos.
 
-1. Cada persona instala Tailscale e inicia sesión. Para invitarlos a tu *tailnet*, usa *Share* o *Invite users*.
+1. Instala Tailscale en cada máquina e inicia sesión con la misma cuenta (o invita a otras cuentas a tu *tailnet* con *Share* o *Invite users*).
 2. El anfitrión arranca el hub: `multi-agents hub --token "..."`.
-3. Los demás usan la IP de Tailscale del anfitrión (`100.x.y.z`) o su nombre MagicDNS: `HUB_URL=http://pc-carlos:7777`.
+3. Las demás máquinas usan la IP de Tailscale del anfitrión (`100.x.y.z`) o su nombre MagicDNS: `HUB_URL=http://pc-hub:7777`.
 
 El tráfico va cifrado por WireGuard, y el hub no queda expuesto a internet.
 
@@ -36,7 +36,7 @@ Comparte la URL `https://…ngrok…` como `HUB_URL`. El túnel aporta HTTPS, y 
 En un servidor con Node 20 o superior:
 
 ```bash
-npm i -g github:toroc07/multi-agents
+git clone https://github.com/toroc07/multi-agents.git && cd multi-agents && npm install && npm link
 MULTI_AGENTS_TOKEN="..." multi-agents hub --host 127.0.0.1 --data-dir /var/lib/multi-agents
 ```
 

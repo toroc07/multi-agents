@@ -8,7 +8,7 @@ En todos los casos el servidor MCP se arranca con:
 node /ruta/a/multi-agents/dist/cli.js connect
 ```
 
-Si instalaste el paquete globalmente (`npm i -g github:toroc07/multi-agents`), `init` te muestra la ruta exacta. En Linux y macOS también puedes usar directamente `multi-agents connect` como comando.
+`init` te muestra la ruta exacta de tu instalación. En Linux y macOS, si hiciste `npm link`, también puedes usar directamente `multi-agents connect` como comando.
 
 ### Variables de entorno
 
@@ -33,7 +33,7 @@ Desde la carpeta del proyecto:
 ```bash
 claude mcp add multi-agents \
   -e HUB_URL=http://HUB:7777 -e MULTI_AGENTS_TOKEN=TOKEN -e PROJECT=mi-app \
-  -e AGENT_NAME=carlos -e AGENT_CLIENT=claude-code \
+  -e AGENT_NAME=claude-1 -e AGENT_CLIENT=claude-code \
   -- node /ruta/a/multi-agents/dist/cli.js connect
 ```
 
@@ -47,7 +47,7 @@ En `~/.codex/config.toml`:
 [mcp_servers.multi-agents]
 command = "node"
 args = ["/ruta/a/multi-agents/dist/cli.js", "connect"]
-env = { HUB_URL = "http://HUB:7777", MULTI_AGENTS_TOKEN = "TOKEN", PROJECT = "mi-app", AGENT_NAME = "amigo-codex", AGENT_CLIENT = "codex" }
+env = { HUB_URL = "http://HUB:7777", MULTI_AGENTS_TOKEN = "TOKEN", PROJECT = "mi-app", AGENT_NAME = "codex-1", AGENT_CLIENT = "codex" }
 tool_timeout_sec = 120
 ```
 
@@ -69,7 +69,7 @@ En `~/.config/opencode/opencode.json`, o en el `opencode.json` del proyecto si e
         "HUB_URL": "http://HUB:7777",
         "MULTI_AGENTS_TOKEN": "TOKEN",
         "PROJECT": "mi-app",
-        "AGENT_NAME": "ana-opencode",
+        "AGENT_NAME": "opencode-1",
         "AGENT_CLIENT": "opencode"
       }
     }
@@ -93,7 +93,7 @@ En `~/.gemini/settings.json`, o en `.gemini/settings.json` del proyecto si está
         "HUB_URL": "http://HUB:7777",
         "MULTI_AGENTS_TOKEN": "TOKEN",
         "PROJECT": "mi-app",
-        "AGENT_NAME": "luis-gemini",
+        "AGENT_NAME": "gemini-1",
         "AGENT_CLIENT": "gemini-cli"
       },
       "timeout": 120000
@@ -114,7 +114,7 @@ En `~/.cursor/mcp.json` o `.cursor/mcp.json`:
     "multi-agents": {
       "command": "node",
       "args": ["/ruta/a/multi-agents/dist/cli.js", "connect"],
-      "env": { "HUB_URL": "http://HUB:7777", "MULTI_AGENTS_TOKEN": "TOKEN", "PROJECT": "mi-app", "AGENT_NAME": "eva-cursor", "AGENT_CLIENT": "cursor" }
+      "env": { "HUB_URL": "http://HUB:7777", "MULTI_AGENTS_TOKEN": "TOKEN", "PROJECT": "mi-app", "AGENT_NAME": "cursor-1", "AGENT_CLIENT": "cursor" }
     }
   }
 }
@@ -130,7 +130,7 @@ En el panel de MCP Servers, entra en *Configure* y edita `cline_mcp_settings.jso
     "multi-agents": {
       "command": "node",
       "args": ["/ruta/a/multi-agents/dist/cli.js", "connect"],
-      "env": { "HUB_URL": "http://HUB:7777", "MULTI_AGENTS_TOKEN": "TOKEN", "PROJECT": "mi-app", "AGENT_NAME": "leo-cline", "AGENT_CLIENT": "cline" },
+      "env": { "HUB_URL": "http://HUB:7777", "MULTI_AGENTS_TOKEN": "TOKEN", "PROJECT": "mi-app", "AGENT_NAME": "cline-1", "AGENT_CLIENT": "cline" },
       "disabled": false,
       "timeout": 120
     }
@@ -151,7 +151,7 @@ En `~/.config/goose/config.yaml`, dentro de `extensions:`:
     enabled: true
     cmd: node
     args: ["/ruta/a/multi-agents/dist/cli.js", "connect"]
-    envs: { HUB_URL: "http://HUB:7777", MULTI_AGENTS_TOKEN: "TOKEN", PROJECT: "mi-app", AGENT_NAME: "sol-goose", AGENT_CLIENT: "goose" }
+    envs: { HUB_URL: "http://HUB:7777", MULTI_AGENTS_TOKEN: "TOKEN", PROJECT: "mi-app", AGENT_NAME: "goose-1", AGENT_CLIENT: "goose" }
     timeout: 300
 ```
 

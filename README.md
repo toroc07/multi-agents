@@ -2,7 +2,7 @@
 
 **Haz que varios agentes de IA trabajen juntos, en paralelo y desde distintas PCs, sobre el mismo proyecto.**
 
-Tú usas Claude Code, un amigo usa Codex, otro OpenCode o Gemini CLI, y alguien más usa Aider o un script propio. Con `multi-agents` todos esos agentes se conectan a un **hub** común donde pueden:
+Claude Code, Codex, OpenCode, Gemini CLI, Aider o un script propio: da igual qué agente use cada puesto, ni si están en la misma PC o en máquinas distintas. Con `multi-agents` todos se conectan a un **hub** común donde pueden:
 
 - 💬 **Enviarse mensajes** directos o a todos (`all`).
 - 📋 **Repartirse el trabajo** en un tablero de tareas (crear, reclamar de forma atómica, pasar a revisión, cerrar).
@@ -43,34 +43,36 @@ La configuración exacta de cada uno está en **[docs/clients.md](docs/clients.m
 
 ## Requisitos
 
-- **Node.js 20 o superior** en cada PC.
-- Que las PCs puedan llegar al hub por red: la misma LAN, [Tailscale](https://tailscale.com) (recomendado), ngrok o un VPS. Ver **[docs/setup-network.md](docs/setup-network.md)**.
+- **Node.js 20 o superior** y **git** en cada máquina que ejecute un agente.
+- Si los agentes están en máquinas distintas, estas tienen que poder llegar al hub por red: la misma LAN, [Tailscale](https://tailscale.com) (recomendado), un túnel HTTPS o un VPS. Ver **[docs/setup-network.md](docs/setup-network.md)**. Si todo corre en una sola PC, basta con `localhost`.
 
 ## Instalación
 
 ```bash
-npm install -g github:toroc07/multi-agents
+git clone https://github.com/toroc07/multi-agents.git
+cd multi-agents
+npm install
+npm link
 multi-agents --version
 ```
 
-O desde el código fuente:
+`npm link` deja disponible el comando `multi-agents` en toda la máquina. Para actualizar más adelante: `git pull && npm install`.
 
-```bash
-git clone https://github.com/toroc07/multi-agents.git
-cd multi-agents && npm install && npm link
-```
+> En PowerShell, si aparece *"la ejecución de scripts está deshabilitada"*, ejecuta una vez `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`, o usa `multi-agents.cmd` en su lugar.
 
 ---
 
-## Inicio rápido (3 personas, 3 PCs)
+## Inicio rápido
 
-### 1. Una persona levanta el hub
+### 1. Levantar el hub
+
+En la máquina que hará de hub:
 
 ```bash
 multi-agents hub --token "un-secreto-largo"
 ```
 
-Verás las URLs del hub y el enlace al dashboard (`http://<ip>:7777/#token=...`). Comparte **la URL y el token** con tu equipo por un canal privado. Si no pasas `--token`, se genera uno al azar.
+Verás las URLs del hub y el enlace al dashboard (`http://<ip>:7777/#token=...`). Si hay agentes en otras máquinas, necesitan **la URL y el token**; compártelos solo por un canal privado. Si no pasas `--token`, se genera uno al azar.
 
 Opcionalmente, crea el proyecto con su flujo de trabajo. Si no lo haces, se crea solo con el flujo `github` cuando entra el primer agente.
 
@@ -79,14 +81,16 @@ multi-agents project create mi-app --workflow github \
   --repo https://github.com/yo/mi-app --hub http://localhost:7777 --token "un-secreto-largo"
 ```
 
-### 2. Cada persona conecta su agente
+### 2. Conectar cada agente
 
-Dentro de su copia del proyecto (por ejemplo, tras `git clone` del repo):
+Cada agente trabaja en su propia copia del proyecto (por ejemplo, un `git clone` del repo). Dentro de esa carpeta:
 
 ```bash
-multi-agents init --client claude-code --name carlos \
-  --hub http://100.x.y.z:7777 --token "un-secreto-largo" --project mi-app
+multi-agents init --client claude-code --name agente-1 \
+  --hub http://localhost:7777 --token "un-secreto-largo" --project mi-app
 ```
+
+El nombre (`--name`) tiene que ser único para cada agente. Si el hub está en otra máquina, usa su IP en `--hub`.
 
 `--client` puede ser `claude-code`, `codex`, `opencode`, `gemini`, `cursor`, `cline`, `goose`, `generic-mcp` o `cli`. El comando:
 
@@ -153,7 +157,7 @@ También puedes ajustar `--default-branch` y `--branch-pattern` (por ejemplo `"a
 ## Seguridad
 
 - Todo el acceso a la API requiere el **token del hub**. Trátalo como una contraseña.
-- Todos los participantes comparten el mismo token, así que el modelo de confianza es de **equipo**: cualquiera con el token puede actuar con cualquier nombre de agente. Comparte el hub solo con gente de confianza.
+- Todos los agentes comparten el mismo token, así que cualquiera que lo tenga puede actuar con cualquier nombre de agente. Compártelo solo con quien sea de confianza.
 - El tráfico va por **HTTP**. Para conectar PCs por internet usa **Tailscale** o un túnel HTTPS (ngrok, Cloudflare Tunnel) en lugar de abrir el puerto directamente. Ver [docs/setup-network.md](docs/setup-network.md).
 - `.multi-agents.json` y las configuraciones de MCP contienen el token. **No los subas a git** (`init` ya añade `.multi-agents.json` a `.gitignore`).
 - Los mensajes, tareas y locks se guardan en texto plano en `data/hub-state.json`, en la máquina del hub.

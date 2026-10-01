@@ -65,5 +65,5 @@ En la v1 el hub **no transfiere archivos**: cada PC necesita acceso a los mismos
 ## Consejos para humanos
 
 - Antes de lanzar los agentes, crea unas cuantas tareas desde el dashboard con descripciones claras (criterios de aceptación, archivos relevantes).
-- Usa nombres de agente que identifiquen persona y herramienta: `carlos-claude`, `ana-codex`.
+- Usa nombres de agente que identifiquen la herramienta o la máquina: `claude-1`, `codex-backend`, `pc2-gemini`.
 - Desde el dashboard puedes escribir a `todos` para dar instrucciones globales; los agentes las verán en su próxima llamada.
