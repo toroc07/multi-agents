@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>multi-agents</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --text: #1d2330; --muted: #677085; --border: #e2e5ea;
+    --accent: #3b6cf6; --accent-text: #ffffff; --ok: #1f9d55; --warn: #c27c0e; --bad: #d64545; --chip: #eef1f6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12151b; --panel: #1a1f27; --text: #e6e9ef; --muted: #8d96a8; --border: #2a313c;
+      --accent: #6d93ff; --accent-text: #0c1020; --ok: #45c07a; --warn: #e0a53a; --bad: #f06b6b; --chip: #242b36;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 12px 16px; background: var(--panel); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 2; }
+  header h1 { font-size: 16px; margin: 0 8px 0 0; }
+  header .spacer { flex: 1; }
+  .live { font-size: 12px; color: var(--muted); }
+  .live::before { content: "●"; margin-right: 4px; color: var(--bad); }
+  .live.on::before { color: var(--ok); }
+  main { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 16px; padding: 16px; max-width: 1500px; margin: 0 auto; }
+  @media (max-width: 900px) { main { grid-template-columns: minmax(0, 1fr); } }
+  section { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px; min-width: 0; }
+  section h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 10px; display: flex; justify-content: space-between; align-items: center; }
+  .col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+  input, select, textarea, button { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; }
+  textarea { width: 100%; resize: vertical; min-height: 60px; }
+  button { cursor: pointer; background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+  button.ghost { background: transparent; color: var(--muted); border-color: var(--border); font-weight: 400; padding: 2px 8px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .row > input[type=text], .row > textarea { flex: 1; min-width: 140px; }
+  .agents { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+  .agent { border: 1px solid var(--border); border-radius: 8px; padding: 10px; }
+  .agent .name { font-weight: 600; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); margin-right: 6px; }
+  .dot.on { background: var(--ok); }
+  .chip { display: inline-block; background: var(--chip); border-radius: 999px; padding: 1px 8px; font-size: 12px; color: var(--muted); margin: 2px 4px 0 0; }
+  .muted { color: var(--muted); font-size: 12px; }
+  .board { display: grid; grid-template-columns: repeat(6, minmax(120px, 1fr)); gap: 8px; overflow-x: auto; }
+  .lane h3 { font-size: 12px; margin: 0 0 6px; color: var(--muted); }
+  .task { border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 6px; padding: 8px; margin-bottom: 6px; font-size: 13px; overflow-wrap: anywhere; }
+  .task[data-s=done] { border-left-color: var(--ok); opacity: .75; }
+  .task[data-s=blocked] { border-left-color: var(--bad); }
+  .task[data-s=review] { border-left-color: var(--warn); }
+  .task a { color: var(--accent); }
+  .feed { max-height: 520px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+  .msg { border-bottom: 1px solid var(--border); padding-bottom: 6px; overflow-wrap: anywhere; white-space: pre-wrap; }
+  .msg b { font-weight: 600; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  td { padding: 4px 6px; border-bottom: 1px solid var(--border); vertical-align: top; overflow-wrap: anywhere; }
+  .login { max-width: 420px; margin: 12vh auto; padding: 16px; }
+  .empty { color: var(--muted); font-size: 13px; }
+  .error { color: var(--bad); font-size: 13px; margin-top: 6px; min-height: 1em; }
+</style>
+</head>
+<body>
+<div id="login" class="login" hidden>
+  <section>
+    <h2>multi-agents</h2>
+    <p>Introduce el token del hub (variable <code>MULTI_AGENTS_TOKEN</code>).</p>
+    <form id="loginForm" class="row">
+      <input type="text" id="tokenInput" placeholder="token" autocomplete="off">
+      <button>Entrar</button>
+    </form>
+    <div class="error" id="loginError"></div>
+  </section>
+</div>
+
+<div id="app" hidden>
+  <header>
+    <h1>multi-agents</h1>
+    <label class="muted">Proyecto <select id="projectSelect"></select></label>
+    <span class="chip" id="workflowChip"></span>
+    <span class="spacer"></span>
+    <label class="muted">Tu nombre <input type="text" id="humanName" size="10"></label>
+    <span class="live" id="live">en vivo</span>
+  </header>
+  <main>
+    <div class="col">
+      <section>
+        <h2>Agentes <span class="muted" id="agentCount"></span></h2>
+        <div class="agents" id="agents"></div>
+      </section>
+      <section>
+        <h2>Tablero de tareas</h2>
+        <div class="board" id="board"></div>
+        <form id="taskForm" class="row" style="margin-top:10px">
+          <input type="text" id="taskTitle" placeholder="Nueva tarea…" required>
+          <select id="taskAssignee"></select>
+          <button>Crear</button>
+        </form>
+        <textarea id="taskDesc" placeholder="Descripción (opcional)" style="margin-top:6px"></textarea>
+        <div class="error" id="taskError"></div>
+      </section>
+      <section>
+        <h2>Bloqueos de archivos</h2>
+        <div id="locks"></div>
+      </section>
+    </div>
+    <div class="col">
+      <section>
+        <h2>Mensajes</h2>
+        <form id="msgForm">
+          <div class="row"><span class="muted">Para</span><select id="msgTo"></select></div>
+          <textarea id="msgBody" placeholder="Escribe a los agentes…" required style="margin-top:6px"></textarea>
+          <div class="row" style="margin-top:6px"><button>Enviar</button><span class="error" id="msgError"></span></div>
+        </form>
+        <div class="feed" id="feed" style="margin-top:12px"></div>
+      </section>
+    </div>
+  </main>
+</div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const store = {
+    get(k) { try { return localStorage.getItem("ma." + k); } catch { return null; } },
+    set(k, v) { try { localStorage.setItem("ma." + k, v); } catch {} },
+  };
+  const STATUSES = ["open", "claimed", "in_progress", "review", "done", "blocked"];
+  const LABELS = { open: "Abiertas", claimed: "Reclamadas", in_progress: "En progreso", review: "En revisión", done: "Hechas", blocked: "Bloqueadas" };
+
+  let token = new URLSearchParams(location.hash.slice(1)).get("token") || store.get("token") || "";
+  if (location.hash.includes("token=")) history.replaceState(null, "", location.pathname);
+  let project = store.get("project") || "";
+  let overview = null;
+  let source = null;
+  let refreshTimer = null;
+
+  $("humanName").value = store.get("human") || "humano";
+  $("humanName").addEventListener("change", (e) => store.set("human", e.target.value.trim() || "humano"));
+
+  function ago(ts) {
+    const s = Math.max(0, Math.round((Date.now() - ts) / 1000));
+    if (s < 60) return `hace ${s}s`;
+    if (s < 3600) return `hace ${Math.round(s / 60)}m`;
+    if (s < 86400) return `hace ${Math.round(s / 3600)}h`;
+    return `hace ${Math.round(s / 86400)}d`;
+  }
+
+  async function api(method, path, body, asHuman) {
+    const headers = { authorization: "Bearer " + token };
+    if (body) headers["content-type"] = "application/json";
+    if (asHuman) {
+      headers["x-agent"] = encodeURIComponent($("humanName").value.trim() || "humano");
+      headers["x-agent-kind"] = "human";
+      headers["x-agent-client"] = "dashboard";
+    }
+    const res = await fetch(path, { method, headers, body: body ? JSON.stringify(body) : undefined });
+    const data = await res.json().catch(() => null);
+    if (res.status === 401) { showLogin("Token inválido"); throw new Error("unauthorized"); }
+    if (!res.ok) throw new Error(data?.error || "HTTP " + res.status);
+    return data;
+  }
+  const pp = () => `/api/projects/${encodeURIComponent(project)}`;
+
+  function showLogin(err) {
+    $("app").hidden = true; $("login").hidden = false; $("loginError").textContent = err || "";
+    if (source) source.close();
+  }
+
+  $("loginForm").addEventListener("submit", (e) => {
+    e.preventDefault(); token = $("tokenInput").value.trim(); store.set("token", token); start();
+  });
+
+  async function start() {
+    if (!token) return showLogin();
+    let projects;
+    try { projects = await api("GET", "/api/projects"); } catch (e) { return; }
+    store.set("token", token);
+    $("login").hidden = true; $("app").hidden = false;
+    const sel = $("projectSelect");
+    if (!projects.length) {
+      sel.innerHTML = `<option value="">(sin proyectos todavía)</option>`;
+      project = "";
+    } else {
+      if (!projects.some((p) => p.id === project)) project = projects[0].id;
+      sel.innerHTML = projects.map((p) => `<option value="${esc(p.id)}" ${p.id === project ? "selected" : ""}>${esc(p.name)} (${esc(p.id)})</option>`).join("");
+    }
+    sel.onchange = () => { project = sel.value; store.set("project", project); connect(); };
+    connect();
+  }
+
+  function connect() {
+    if (source) source.close();
+    source = new EventSource(`/api/events?token=${encodeURIComponent(token)}`);
+    source.onopen = () => $("live").classList.add("on");
+    source.onerror = () => $("live").classList.remove("on");
+    source.onmessage = (e) => {
+      const ev = JSON.parse(e.data);
+      if (ev.type === "project" && !document.querySelector(`#projectSelect option[value="${CSS.escape(ev.project)}"]`)) return start();
+      if (ev.project === project) scheduleRefresh();
+    };
+    refresh();
+  }
+
+  function scheduleRefresh() { clearTimeout(refreshTimer); refreshTimer = setTimeout(refresh, 200); }
+
+  async function refresh() {
+    if (!project) { render(null); return; }
+    try { overview = await api("GET", `${pp()}/overview`); render(overview); } catch (e) { console.error(e); }
+  }
+
+  function render(ov) {
+    if (!ov) {
+      $("agents").innerHTML = `<p class="empty">Aún no hay proyectos. Se crean cuando el primer agente se conecta o con <code>multi-agents project create</code>.</p>`;
+      ["board", "locks", "feed"].forEach((id) => ($(id).innerHTML = ""));
+      return;
+    }
+    const p = ov.project;
+    $("workflowChip").textContent = `${p.workflow}${p.repoUrl ? " · " + p.repoUrl : ""} · base ${p.defaultBranch}`;
+
+    const online = ov.agents.filter((a) => a.online).length;
+    $("agentCount").textContent = `${online} en línea / ${ov.agents.length}`;
+    $("agents").innerHTML = ov.agents.length ? ov.agents.map((a) => `
+      <div class="agent">
+        <div class="name"><span class="dot ${a.online ? "on" : ""}"></span>${esc(a.name)}</div>
+        <div><span class="chip">${esc(a.client)}</span>${a.model ? `<span class="chip">${esc(a.model)}</span>` : ""}<span class="chip">${esc(a.kind)}</span></div>
+        ${a.status ? `<div style="margin-top:6px">${esc(a.status)}</div>` : ""}
+        ${a.branch ? `<div class="muted">rama ${esc(a.branch)}</div>` : ""}
+        <div class="muted">${a.online ? "activo" : "visto"} ${ago(a.lastSeen)}</div>
+      </div>`).join("") : `<p class="empty">Ningún agente conectado todavía.</p>`;
+
+    $("board").innerHTML = STATUSES.map((s) => {
+      const tasks = ov.tasks.filter((t) => t.status === s);
+      return `<div class="lane"><h3>${LABELS[s]} (${tasks.length})</h3>${tasks.map((t) => `
+        <div class="task" data-s="${s}" title="${esc(t.description)}">
+          <b>#${t.id}</b> ${esc(t.title)}
+          <div class="muted">${t.assignee ? "@" + esc(t.assignee) : "sin asignar"} · ${ago(t.updatedAt)}</div>
+          ${t.branch ? `<div class="muted">${esc(t.branch)}</div>` : ""}
+          ${t.reviewUrl ? `<div><a href="${/^https?:\/\//.test(t.reviewUrl) ? esc(t.reviewUrl) : "#"}" target="_blank" rel="noopener">revisión</a></div>` : ""}
+          ${t.notes.length ? `<div class="muted">📝 ${esc(t.notes.at(-1).author)}: ${esc(t.notes.at(-1).text)}</div>` : ""}
+        </div>`).join("")}</div>`;
+    }).join("");
+
+    $("locks").innerHTML = ov.locks.length ? `<table>${ov.locks.map((l) => `
+      <tr><td><code>${esc(l.path)}</code></td><td>${esc(l.owner)}</td><td class="muted">${esc(l.reason)}</td>
+      <td class="muted">expira en ${Math.max(0, Math.round((l.expiresAt - Date.now()) / 60000))}m</td>
+      <td><button class="ghost" data-unlock="${esc(l.path)}" title="Forzar liberación">liberar</button></td></tr>`).join("")}</table>`
+      : `<p class="empty">Sin bloqueos activos.</p>`;
+
+    const names = ov.agents.map((a) => a.name);
+    const keepTo = $("msgTo").value;
+    $("msgTo").innerHTML = `<option value="all">todos</option>` + names.map((n) => `<option ${n === keepTo ? "selected" : ""}>${esc(n)}</option>`).join("");
+    const keepAs = $("taskAssignee").value;
+    $("taskAssignee").innerHTML = `<option value="">sin asignar</option>` + names.map((n) => `<option ${n === keepAs ? "selected" : ""}>${esc(n)}</option>`).join("");
+
+    const feed = $("feed");
+    feed.innerHTML = ov.messages.length ? ov.messages.slice().reverse().map((m) => `
+      <div class="msg"><b>${esc(m.from)}</b> → ${m.to === "all" ? "<i>todos</i>" : esc(m.to)} <span class="muted">${ago(m.createdAt)}</span><br>${esc(m.body)}</div>`).join("")
+      : `<p class="empty">Sin mensajes todavía.</p>`;
+  }
+
+  $("locks").addEventListener("click", async (e) => {
+    const path = e.target.dataset?.unlock;
+    if (!path || !confirm(`¿Forzar la liberación de "${path}"?`)) return;
+    try { await api("POST", `${pp()}/locks/release`, { paths: [path], force: true }, true); } catch (err) { alert(err.message); }
+  });
+
+  $("msgForm").addEventListener("submit", async (e) => {
+    e.preventDefault(); $("msgError").textContent = "";
+    try {
+      await api("POST", `${pp()}/messages`, { to: $("msgTo").value, body: $("msgBody").value }, true);
+      $("msgBody").value = "";
+    } catch (err) { $("msgError").textContent = err.message; }
+  });
+
+  $("taskForm").addEventListener("submit", async (e) => {
+    e.preventDefault(); $("taskError").textContent = "";
+    try {
+      await api("POST", `${pp()}/tasks`, { title: $("taskTitle").value, description: $("taskDesc").value || undefined, assignee: $("taskAssignee").value || undefined }, true);
+      $("taskTitle").value = ""; $("taskDesc").value = "";
+    } catch (err) { $("taskError").textContent = err.message; }
+  });
+
+  setInterval(() => overview && render(overview), 30000);
+  start();
+})();
+</script>
+</body>
+</html>
