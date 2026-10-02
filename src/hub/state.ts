@@ -182,7 +182,8 @@ export class HubState {
         sessionId: info.sessionId,
         connectedAt: now,
         lastSeen: now,
-        lastReadId: 0,
+        // A newcomer starts with an empty inbox; the board already tells it the project's current state.
+        lastReadId: ps.nextMessageId - 1,
         disconnected: false,
       };
       ps.agents[name] = created;
@@ -225,6 +226,36 @@ export class HubState {
     agent.disconnected = true;
     this.record(ps, { actor: name, type: "agent.disconnected", reason: "closed" });
     this.releaseAllLocks(ps, name, "disconnect");
+    this.emit({ type: "agent", project: projectId, agent: name });
+  }
+
+  /**
+   * Removes an offline agent from the project (e.g. a test session or a tool
+   * nobody uses any more). Its locks are released and its active tasks reopened.
+   */
+  removeAgent(projectId: string, name: string, by: string): void {
+    const ps = this.ps(projectId);
+    const agent = this.agent(projectId, name);
+    if (this.isOnline(agent)) throw new HubError(409, `Agent "${name}" is online; only offline agents can be removed`);
+    delete ps.agents[name];
+    const locks = ps.locks.filter((l) => l.owner === name);
+    if (locks.length) {
+      ps.locks = ps.locks.filter((l) => l.owner !== name);
+      this.record(ps, { actor: by, type: "lock.released", paths: locks.map((l) => l.path), reason: "forced", target: name });
+      this.emit({ type: "lock", project: projectId });
+    }
+    for (const task of Object.values(ps.tasks)) {
+      if (task.assignee !== name || !ACTIVE_STATUSES.includes(task.status)) continue;
+      const previous = task.status;
+      task.status = "open";
+      task.assignee = undefined;
+      task.notes.push({ author: by, text: `Reopened because agent ${name} was removed`, at: this.now() });
+      task.updatedAt = this.now();
+      this.record(ps, { actor: by, type: "task.status", taskId: task.id, title: task.title, previous, status: "open" });
+      this.announce(ps, by, `${by} removed agent ${name}; ${ref(task)} is open again.`);
+      this.emit({ type: "task", project: projectId, taskId: task.id });
+    }
+    this.record(ps, { actor: by, type: "agent.removed", target: name });
     this.emit({ type: "agent", project: projectId, agent: name });
   }
 

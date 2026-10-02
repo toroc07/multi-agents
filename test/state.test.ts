@@ -315,6 +315,30 @@ describe("coordination (v0.2)", () => {
     expect(state.log(P).find((e) => e.type === "lock.conflict")?.target).toBe("alice");
   });
 
+  it("removes offline agents, releasing their locks and reopening their active tasks", () => {
+    state.identify(P, "carlos", { kind: "human" });
+    const t = state.createTask(P, "alice", { title: "x" });
+    state.claimTask(P, "carol", t.id);
+    state.lockFiles(P, "carol", ["a.ts"]);
+    expectHubError(() => state.removeAgent(P, "carol", "carlos"), 409);
+
+    now += 11 * 60_000; // carol is a CLI agent: offline after 10 min without calls
+    state.identify(P, "carlos");
+    state.removeAgent(P, "carol", "carlos");
+    expect(state.listAgents(P).map((a) => a.name)).not.toContain("carol");
+    expect(state.listLocks(P)).toHaveLength(0);
+    expect(state.getTask(P, t.id)).toMatchObject({ status: "open", assignee: undefined });
+    expect(state.log(P).at(-1)).toMatchObject({ type: "agent.removed", actor: "carlos", target: "carol" });
+  });
+
+  it("starts newcomers with an empty inbox", () => {
+    state.sendMessage(P, "alice", "all", "old news");
+    state.identify(P, "dave");
+    expect(state.unreadCount(P, "dave")).toBe(0);
+    state.sendMessage(P, "alice", "all", "fresh");
+    expect(state.readMessages(P, "dave").map((m) => m.body)).toEqual(["fresh"]);
+  });
+
   it("loads v0.1 state files without a log", () => {
     const old = JSON.parse(JSON.stringify(state.snapshot()));
     for (const ps of Object.values(old.projects) as Record<string, unknown>[]) {

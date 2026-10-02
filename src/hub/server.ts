@@ -205,6 +205,14 @@ export function createHub(opts: HubOptions): Hub {
       handler: async (ctx) => state.getAgent(project(ctx), state.updateAgent(project(ctx), me(ctx), await parse(ctx, agentPatchSchema)).name),
     },
     { method: "GET", pattern: new RegExp(`^${P}/agents$`), handler: (ctx) => state.listAgents(project(ctx)) },
+    {
+      method: "DELETE",
+      pattern: new RegExp(`^${P}/agents/([^/]+)$`),
+      handler: (ctx) => {
+        state.removeAgent(project(ctx), ctx.params[1]!, me(ctx));
+        return { ok: true };
+      },
+    },
 
     // Messages
     {
