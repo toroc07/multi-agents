@@ -110,8 +110,39 @@ export class HubClient {
   }
 
   // Messages
-  sendMessage(to: string, body: string) {
-    return this.request<Message>("POST", `${this.base}/messages`, { to, body });
+  sendMessage(to: string | undefined, body: string, replyTo?: number) {
+    return this.request<Message>("POST", `${this.base}/messages`, { to, body, replyTo });
+  }
+  ask(body: string, options?: string[], to?: string) {
+    return this.request<Message>("POST", `${this.base}/questions`, { body, options, to });
+  }
+  pendingQuestions() {
+    return this.request<Message[]>("GET", `${this.base}/questions`);
+  }
+
+  /**
+   * Asks a question and waits up to `timeoutS` for its answer. Other messages
+   * that arrive meanwhile are returned too (they are already marked as read).
+   */
+  async askAndWait(
+    input: { body: string; options?: string[]; to?: string },
+    timeoutS: number,
+    signal?: AbortSignal,
+  ): Promise<{ question: Message; answer?: Message; others: Message[]; unread: number }> {
+    const { data: question, unread: initialUnread } = await this.ask(input.body, input.options, input.to);
+    const deadline = Date.now() + timeoutS * 1000;
+    const others: Message[] = [];
+    let unread = initialUnread;
+    while (Date.now() < deadline) {
+      const left = Math.max(1, Math.round((deadline - Date.now()) / 1000));
+      const res = await this.waitForMessages(left, signal);
+      unread = res.unread;
+      const answer = res.data.find((m) => m.replyTo === question.id);
+      others.push(...res.data.filter((m) => m !== answer));
+      if (answer) return { question, answer, others, unread };
+      if (!res.data.length) break;
+    }
+    return { question, others, unread };
   }
   readMessages(peek = false) {
     return this.request<Message[]>("GET", `${this.base}/messages?unread=1${peek ? "&peek=1" : ""}`);

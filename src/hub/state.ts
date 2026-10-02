@@ -247,9 +247,74 @@ export class HubState {
 
   // ---------- Messages ----------
 
-  sendMessage(projectId: string, from: string, to: string, body: string): Message {
+  /**
+   * Sends a chat message. With `replyTo` it answers a question: `to` then
+   * defaults to the question's author and the answer is stored on the question.
+   */
+  sendMessage(projectId: string, from: string, to: string | undefined, body: string, replyTo?: number): Message {
     const ps = this.ps(projectId);
     this.agent(projectId, from);
+    let question: Message | undefined;
+    if (replyTo !== undefined) {
+      question = ps.messages.find((m) => m.id === replyTo);
+      if (!question || question.kind !== "question") throw new HubError(404, `Question #${replyTo} does not exist`);
+    }
+    const recipient = to ?? question?.from;
+    if (!recipient) throw new HubError(400, 'Missing recipient: pass an agent name or "all"');
+    const target = this.resolveRecipient(ps, from, recipient);
+    const message = this.pushMessage(ps, {
+      from,
+      to: target,
+      body,
+      kind: question ? "answer" : "message",
+      replyTo: question?.id,
+    });
+    if (question && !question.answer) {
+      question.answer = { by: from, body, at: message.createdAt, messageId: message.id };
+    }
+    return message;
+  }
+
+  /**
+   * Asks a question that should be answered through the hub (never in a local
+   * console nobody is watching). Without `to` it goes to whoever most recently
+   * asked this agent for something.
+   */
+  askQuestion(projectId: string, from: string, input: { to?: string; body: string; options?: string[] }): Message {
+    const ps = this.ps(projectId);
+    this.agent(projectId, from);
+    const target = this.resolveRecipient(ps, from, input.to ?? this.defaultAskTarget(ps, from));
+    return this.pushMessage(ps, {
+      from,
+      to: target,
+      body: input.body,
+      kind: "question",
+      options: input.options?.length ? input.options : undefined,
+    });
+  }
+
+  pendingQuestions(projectId: string): Message[] {
+    return this.ps(projectId).messages.filter((m) => m.kind === "question" && !m.answer);
+  }
+
+  getMessage(projectId: string, id: number): Message {
+    const message = this.ps(projectId).messages.find((m) => m.id === id);
+    if (!message) throw new HubError(404, `Message #${id} does not exist`);
+    return message;
+  }
+
+  private defaultAskTarget(ps: ProjectState, me: string): string {
+    for (let i = ps.messages.length - 1; i >= 0; i--) {
+      const m = ps.messages[i]!;
+      if (m.to === me && m.from !== me && ps.agents[m.from]) return m.from;
+    }
+    const active = Object.values(ps.tasks).find(
+      (t) => t.assignee === me && t.status !== "done" && t.status !== "open" && t.createdBy !== me,
+    );
+    return active?.createdBy ?? BROADCAST;
+  }
+
+  private resolveRecipient(ps: ProjectState, from: string, to: string): string {
     const target = to.toLowerCase() === BROADCAST ? BROADCAST : to;
     if (target !== BROADCAST && !ps.agents[target]) {
       const known = Object.keys(ps.agents).filter((n) => n !== from);
@@ -259,10 +324,16 @@ export class HubState {
       );
     }
     if (target === from) throw new HubError(400, "You cannot send a message to yourself");
-    const message: Message = { id: ps.nextMessageId++, from, to: target, body, createdAt: this.now() };
+    return target;
+  }
+
+  private pushMessage(ps: ProjectState, fields: Omit<Message, "id" | "createdAt">): Message {
+    const message: Message = { id: ps.nextMessageId++, createdAt: this.now(), ...fields };
+    if (message.kind === "message") delete message.kind;
+    for (const key of ["options", "replyTo"] as const) if (message[key] === undefined) delete message[key];
     ps.messages.push(message);
     if (ps.messages.length > MAX_MESSAGES_PER_PROJECT) ps.messages.splice(0, ps.messages.length - MAX_MESSAGES_PER_PROJECT);
-    this.emit({ type: "message", project: projectId, message });
+    this.emit({ type: "message", project: ps.project.id, message });
     return message;
   }
 

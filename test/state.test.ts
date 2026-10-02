@@ -107,6 +107,46 @@ describe("messages", () => {
   });
 });
 
+describe("questions", () => {
+  it("are answered through the hub and the answer is stored on the question", () => {
+    const q = state.askQuestion(P, "bob", { to: "alice", body: "Which approach?", options: ["A", "B"] });
+    expect(q).toMatchObject({ kind: "question", to: "alice", options: ["A", "B"] });
+    expect(state.pendingQuestions(P).map((m) => m.id)).toEqual([q.id]);
+
+    const answer = state.sendMessage(P, "alice", undefined, "B", q.id);
+    expect(answer).toMatchObject({ kind: "answer", to: "bob", replyTo: q.id });
+    expect(state.getMessage(P, q.id).answer).toMatchObject({ by: "alice", body: "B" });
+    expect(state.pendingQuestions(P)).toHaveLength(0);
+    expect(state.readMessages(P, "bob").map((m) => m.body)).toEqual(["B"]);
+  });
+
+  it("keep the first answer", () => {
+    const q = state.askQuestion(P, "bob", { to: "all", body: "Anyone?" });
+    state.sendMessage(P, "alice", undefined, "first", q.id);
+    state.sendMessage(P, "carol", undefined, "second", q.id);
+    expect(state.getMessage(P, q.id).answer?.body).toBe("first");
+  });
+
+  it("default to whoever last asked the agent for something", () => {
+    state.identify(P, "carlos", { kind: "human" });
+    state.sendMessage(P, "carlos", "bob", "please add a division guard");
+    expect(state.askQuestion(P, "bob", { body: "Which option?" }).to).toBe("carlos");
+  });
+
+  it("fall back to the creator of the agent's active task, then to everyone", () => {
+    expect(state.askQuestion(P, "carol", { body: "Anyone?" }).to).toBe("all");
+    const t = state.createTask(P, "alice", { title: "x" });
+    state.claimTask(P, "carol", t.id);
+    expect(state.askQuestion(P, "carol", { body: "Details?" }).to).toBe("alice");
+  });
+
+  it("reject replies to things that are not questions", () => {
+    const m = state.sendMessage(P, "alice", "bob", "hi");
+    expectHubError(() => state.sendMessage(P, "bob", undefined, "re", m.id), 404);
+    expectHubError(() => state.sendMessage(P, "bob", undefined, "no recipient"), 400);
+  });
+});
+
 describe("tasks", () => {
   it("claim is exclusive", () => {
     const t = state.createTask(P, "alice", { title: "login" });
@@ -199,6 +239,8 @@ describe("protocol", () => {
     expect(github).toContain("agent/bob");
     expect(github).toContain("gh pr create");
     expect(github).toContain("`claim_task`");
+    expect(github).toContain("Never ask in your local console");
+    expect(github).toContain("`ask`");
 
     state.upsertProject({ id: P, workflow: "none" });
     const none = buildProtocol(state.getProject(P), { iface: "cli" });

@@ -2,7 +2,7 @@ import type { AgentConfig } from "../config.js";
 import { buildProtocol } from "../shared/protocol.js";
 import { TASK_STATUSES, WORKFLOWS, type TaskStatus, type Workflow } from "../shared/types.js";
 import { HubClient, type HubResponse } from "./client.js";
-import { fmtAgents, fmtLocks, fmtMessages, fmtTask, fmtTaskLine, fmtTasks, fmtUnread } from "./format.js";
+import { fmtAgents, fmtAskResult, fmtLocks, fmtMessages, fmtTask, fmtTaskLine, fmtTasks, fmtUnread } from "./format.js";
 
 /** Option values parsed by cli.ts (node:util parseArgs). */
 export type Opts = Record<string, string | boolean | undefined>;
@@ -67,21 +67,37 @@ export async function runAgentCommand(cfg: AgentConfig, command: string, args: s
     case "msg":
       switch (sub) {
         case "send": {
-          const [to, ...words] = rest;
-          if (!to || !words.length) throw new UsageError('Usage: multi-agents msg send <agent|all> "<text>"');
-          return out(await client.sendMessage(to, words.join(" ")), (m) => `Sent message #${m.id} to ${m.to}.`);
+          const replyTo = str(opts["reply-to"]) ? int(str(opts["reply-to"]), "question id") : undefined;
+          const [to, ...words] = replyTo === undefined ? rest : [undefined, ...rest];
+          if ((!to && replyTo === undefined) || !words.length) {
+            throw new UsageError('Usage: multi-agents msg send <agent|all> "<text>"  |  msg send --reply-to <id> "<answer>"');
+          }
+          return out(await client.sendMessage(to, words.join(" "), replyTo), (m) =>
+            m.replyTo ? `Answered question #${m.replyTo} (message #${m.id} to ${m.to}).` : `Sent message #${m.id} to ${m.to}.`,
+          );
         }
         case "read":
-          return out(await client.readMessages(opts.peek === true), fmtMessages);
+          return out(await client.readMessages(opts.peek === true), (m) => fmtMessages(m, "cli"));
         case "wait": {
           const timeout = str(opts.timeout) ? int(str(opts.timeout), "timeout in seconds") : cfg.waitTimeoutS;
           return out(await client.waitForMessages(timeout), (m) =>
-            m.length ? fmtMessages(m) : "No messages arrived before the timeout.",
+            m.length ? fmtMessages(m, "cli") : "No messages arrived before the timeout.",
           );
         }
         default:
           throw new UsageError("Usage: multi-agents msg <send|read|wait>");
       }
+
+    case "ask": {
+      if (!args.length) throw new UsageError('Usage: multi-agents ask "<question>" [--options "A|B|C"] [--to name] [--timeout S]');
+      const timeout = str(opts.timeout) ? int(str(opts.timeout), "timeout in seconds") : cfg.waitTimeoutS;
+      const options = str(opts.options)
+        ?.split("|")
+        .map((o) => o.trim())
+        .filter(Boolean);
+      const res = await client.askAndWait({ body: args.join(" "), options, to: str(opts.to) }, timeout);
+      return out({ data: res, unread: res.unread }, (r) => fmtAskResult(r, timeout, "cli"));
+    }
 
     case "task":
       switch (sub) {

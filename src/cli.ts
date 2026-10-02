@@ -22,6 +22,9 @@ AGENT COMMANDS (for agents without MCP, or humans)
   multi-agents status ["what I'm doing"] [--branch B]
   multi-agents agents
   multi-agents msg send <agent|all> "<text>"  |  msg read [--peek]  |  msg wait [--timeout S]
+  multi-agents msg send --reply-to <question-id> "<answer>"
+  multi-agents ask "<question>" [--options "A|B|C"] [--to name] [--timeout S]
+                                  ask through the hub and wait for the answer
   multi-agents task list [--status S] [--mine]  |  task show <id>
   multi-agents task create "<title>" [--desc D] [--assign agent]
   multi-agents task claim <id>
@@ -74,6 +77,9 @@ async function main(): Promise<number> {
       reason: { type: "string" },
       ttl: { type: "string" },
       force: { type: "boolean" },
+      to: { type: "string" },
+      options: { type: "string" },
+      "reply-to": { type: "string" },
     },
   });
 

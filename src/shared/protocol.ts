@@ -17,6 +17,8 @@ const ACTIONS = {
   agents: { mcp: "list_agents", cli: "multi-agents agents" },
   status: { mcp: "set_status", cli: 'multi-agents status "<text>"' },
   send: { mcp: "send_message", cli: 'multi-agents msg send <agent|all> "<text>"' },
+  ask: { mcp: "ask", cli: 'multi-agents ask "<question>" --options "A|B"' },
+  reply: { mcp: "send_message with reply_to", cli: 'multi-agents msg send --reply-to <id> "<answer>"' },
   read: { mcp: "read_messages", cli: "multi-agents msg read" },
   wait: { mcp: "wait_for_messages", cli: "multi-agents msg wait" },
   tasks: { mcp: "list_tasks", cli: "multi-agents task list" },
@@ -69,13 +71,17 @@ export function buildProtocol(
     `3. **Lock before editing:** reserve the files or folders you are about to change with ${a("lock")} (folders lock everything inside). ` +
       `If a lock conflicts, message its owner with ${a("send")} or pick other work — do not edit locked paths.`,
     `4. **Stay visible:** keep your status current with ${a("status")} (what you are doing right now).`,
-    `5. **Check your inbox often:** every hub response tells you how many messages are unread; read them with ${a("read")} ` +
-      `and answer direct questions promptly.`,
-    `6. **When you finish a task:** ${a("update")} it to \`review\` or \`done\` with a short note, release locks with ${a("unlock")}, ` +
+    `5. **Check your inbox often:** every hub response tells you how many messages are unread; read them with ${a("read")}. ` +
+      `When someone asks you a question (❓), answer it with ${a("reply")}.`,
+    `6. **Never ask in your local console.** Nobody may be watching your terminal — you may be running unattended on a remote ` +
+      `machine and requests may come from people on the dashboard. Whenever you need a decision, clarification or approval, ` +
+      `ask through the hub with ${a("ask")} (offer options when there are clear choices), addressed to whoever gave you the request, ` +
+      `and wait for the answer. Do not use your tool's built-in interactive question prompts for this.`,
+    `7. **When you finish a task:** ${a("update")} it to \`review\` or \`done\` with a short note, release locks with ${a("unlock")}, ` +
       `and announce it to \`all\` with ${a("send")}.`,
-    `7. **When blocked:** set the task to \`blocked\` with a note explaining what you need and message whoever can help.`,
-    `8. **When idle:** call ${a("wait")} to wait for new messages or assignments instead of stopping.`,
-    `9. Keep messages short and concrete (file paths, task ids, what you need).`,
+    `8. **When blocked:** set the task to \`blocked\` with a note explaining what you need and ${a("ask")} whoever can help.`,
+    `9. **When idle:** call ${a("wait")} to wait for new messages or assignments instead of stopping.`,
+    `10. Keep messages short and concrete (file paths, task ids, what you need).`,
   );
   lines.push("");
   lines.push(`## Version control — workflow \`${project.workflow}\``);

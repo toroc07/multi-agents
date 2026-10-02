@@ -51,6 +51,14 @@
   .feed { max-height: 520px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
   .msg { border-bottom: 1px solid var(--border); padding-bottom: 6px; overflow-wrap: anywhere; white-space: pre-wrap; }
   .msg b { font-weight: 600; }
+  .msg.q { border-left: 3px solid var(--warn); padding-left: 8px; }
+  .msg.a { border-left: 3px solid var(--ok); padding-left: 8px; }
+  .questions { border-color: var(--warn); }
+  .question { border: 1px solid var(--border); border-left: 3px solid var(--warn); border-radius: 6px; padding: 10px; margin-bottom: 8px; overflow-wrap: anywhere; }
+  .question .body { margin: 4px 0 8px; white-space: pre-wrap; }
+  .question.mine { background: color-mix(in srgb, var(--warn) 8%, transparent); }
+  .question .row button { font-weight: 500; }
+  .opt { background: transparent; color: var(--text); border-color: var(--warn); }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   td { padding: 4px 6px; border-bottom: 1px solid var(--border); vertical-align: top; overflow-wrap: anywhere; }
   .login { max-width: 420px; margin: 12vh auto; padding: 16px; }
@@ -103,6 +111,10 @@
       </section>
     </div>
     <div class="col">
+      <section id="questionsSection" class="questions" hidden>
+        <h2>Preguntas pendientes <span class="muted" id="questionCount"></span></h2>
+        <div id="questions"></div>
+      </section>
       <section>
         <h2>Mensajes</h2>
         <form id="msgForm">
@@ -252,11 +264,65 @@
     const keepAs = $("taskAssignee").value;
     $("taskAssignee").innerHTML = `<option value="">sin asignar</option>` + names.map((n) => `<option ${n === keepAs ? "selected" : ""}>${esc(n)}</option>`).join("");
 
+    renderQuestions(ov);
+
     const feed = $("feed");
-    feed.innerHTML = ov.messages.length ? ov.messages.slice().reverse().map((m) => `
-      <div class="msg"><b>${esc(m.from)}</b> → ${m.to === "all" ? "<i>todos</i>" : esc(m.to)} <span class="muted">${ago(m.createdAt)}</span><br>${esc(m.body)}</div>`).join("")
-      : `<p class="empty">Sin mensajes todavía.</p>`;
+    feed.innerHTML = ov.messages.length ? ov.messages.slice().reverse().map((m) => {
+      const head = `<b>${esc(m.from)}</b> → ${m.to === "all" ? "<i>todos</i>" : esc(m.to)} <span class="muted">#${m.id} · ${ago(m.createdAt)}</span>`;
+      if (m.kind === "question") {
+        const opts = m.options?.length ? `<div class="muted">Opciones: ${m.options.map((o, i) => `${i + 1}) ${esc(o)}`).join(" · ")}</div>` : "";
+        const status = m.answer ? `<div class="muted">✅ ${esc(m.answer.by)}: ${esc(m.answer.body)}</div>` : `<div class="muted">⏳ sin responder</div>`;
+        return `<div class="msg q">${head}<br>❓ ${esc(m.body)}${opts}${status}</div>`;
+      }
+      if (m.kind === "answer") return `<div class="msg a">${head}<br>↩ <span class="muted">respuesta a #${m.replyTo}:</span> ${esc(m.body)}</div>`;
+      return `<div class="msg">${head}<br>${esc(m.body)}</div>`;
+    }).join("") : `<p class="empty">Sin mensajes todavía.</p>`;
   }
+
+  // Pending questions: re-rendered only when the set changes, so typing an answer is never interrupted.
+  const drafts = {};
+  let questionsKey = "";
+  function renderQuestions(ov) {
+    const me = $("humanName").value.trim();
+    const pending = ov.messages.filter((m) => m.kind === "question" && !m.answer);
+    const key = `${project}|${me}|${pending.map((q) => q.id).join(",")}`;
+    $("questionsSection").hidden = !pending.length;
+    $("questionCount").textContent = pending.length ? `(${pending.length})` : "";
+    if (key === questionsKey) return;
+    questionsKey = key;
+    $("questions").innerHTML = pending.slice().reverse().map((q) => `
+      <div class="question ${q.to === me || q.to === "all" ? "mine" : ""}">
+        <b>${esc(q.from)}</b> → ${q.to === "all" ? "<i>todos</i>" : esc(q.to)} <span class="muted">#${q.id} · ${ago(q.createdAt)}</span>
+        <div class="body">${esc(q.body)}</div>
+        ${q.options?.length ? `<div class="row">${q.options.map((o) => `<button class="opt" data-q="${q.id}" data-answer="${esc(o)}">${esc(o)}</button>`).join("")}</div>` : ""}
+        <form class="row answerForm" data-q="${q.id}" style="margin-top:6px">
+          <input type="text" placeholder="Otra respuesta…" value="${esc(drafts[q.id] || "")}" data-draft="${q.id}">
+          <button>Responder</button>
+        </form>
+      </div>`).join("");
+  }
+
+  async function answer(id, body) {
+    if (!body.trim()) return;
+    try {
+      await api("POST", `${pp()}/messages`, { replyTo: Number(id), body }, true);
+      delete drafts[id];
+    } catch (err) { alert(err.message); }
+  }
+
+  $("questions").addEventListener("click", (e) => {
+    const btn = e.target.closest("button.opt");
+    if (btn) answer(btn.dataset.q, btn.dataset.answer);
+  });
+  $("questions").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const input = e.target.querySelector("input");
+    answer(e.target.dataset.q, input.value);
+  });
+  $("questions").addEventListener("input", (e) => {
+    if (e.target.dataset.draft) drafts[e.target.dataset.draft] = e.target.value;
+  });
+  $("humanName").addEventListener("change", () => overview && render(overview));
 
   $("locks").addEventListener("click", async (e) => {
     const path = e.target.dataset?.unlock;

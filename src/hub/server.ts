@@ -13,6 +13,7 @@ import {
   lockInputSchema,
   messageInputSchema,
   projectInputSchema,
+  questionInputSchema,
   registerSchema,
   taskInputSchema,
   taskPatchSchema,
@@ -211,8 +212,23 @@ export function createHub(opts: HubOptions): Hub {
       pattern: new RegExp(`^${P}/messages$`),
       handler: async (ctx) => {
         const body = await parse(ctx, messageInputSchema);
-        return state.sendMessage(project(ctx), me(ctx), body.to, body.body);
+        return state.sendMessage(project(ctx), me(ctx), body.to, body.body, body.replyTo);
       },
+    },
+    {
+      method: "POST",
+      pattern: new RegExp(`^${P}/questions$`),
+      handler: async (ctx) => state.askQuestion(project(ctx), me(ctx), await parse(ctx, questionInputSchema)),
+    },
+    {
+      method: "GET",
+      pattern: new RegExp(`^${P}/questions$`),
+      handler: (ctx) => state.pendingQuestions(project(ctx)),
+    },
+    {
+      method: "GET",
+      pattern: new RegExp(`^${P}/messages/(\\d+)$`),
+      handler: (ctx) => state.getMessage(project(ctx), Number(ctx.params[1])),
     },
     {
       method: "GET",
@@ -374,7 +390,7 @@ export function createHub(opts: HubOptions): Hub {
         }
         const data = await route.handler(ctx);
         const unread = ctx.agent && ctx.project ? state.unreadCount(ctx.project, ctx.agent) : undefined;
-        sendJson(res, method === "POST" && /\/(tasks|messages)$/.test(path) ? 201 : 200, data ?? null, unread);
+        sendJson(res, method === "POST" && /\/(tasks|messages|questions)$/.test(path) ? 201 : 200, data ?? null, unread);
       } catch (err) {
         if (err instanceof HubError) sendJson(res, err.status, { error: err.message });
         else if (err instanceof PathError) sendJson(res, 400, { error: err.message });

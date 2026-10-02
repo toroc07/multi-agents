@@ -47,6 +47,17 @@ export interface AgentView extends Omit<Agent, "sessionId" | "lastReadId" | "dis
   online: boolean;
 }
 
+/** "message" is plain chat; a "question" waits for an "answer" that points back to it with replyTo. */
+export const MESSAGE_KINDS = ["message", "question", "answer"] as const;
+export type MessageKind = (typeof MESSAGE_KINDS)[number];
+
+export interface Answer {
+  by: string;
+  body: string;
+  at: number;
+  messageId: number;
+}
+
 export interface Message {
   id: number;
   from: string;
@@ -54,6 +65,14 @@ export interface Message {
   to: string;
   body: string;
   createdAt: number;
+  /** Missing on messages stored before v0.2; treat as "message". */
+  kind?: MessageKind;
+  /** Suggested choices for a question. */
+  options?: string[];
+  /** Question this message answers. */
+  replyTo?: number;
+  /** First answer received, stored on the question itself. */
+  answer?: Answer;
 }
 
 export interface TaskNote {
@@ -118,9 +137,19 @@ export const agentPatchSchema = z.object({
 });
 
 export const messageInputSchema = z.object({
-  to: z.string().min(1).max(40),
+  /** Optional when replying: defaults to the question's author. */
+  to: z.string().min(1).max(40).optional(),
   body: z.string().min(1).max(20_000),
+  replyTo: z.number().int().positive().optional(),
 });
+
+export const questionInputSchema = z.object({
+  /** Who should answer; defaults to whoever most recently asked this agent for something. */
+  to: z.string().min(1).max(40).optional(),
+  body: z.string().min(1).max(5_000),
+  options: z.array(z.string().min(1).max(200)).max(10).optional(),
+});
+export type QuestionInput = z.infer<typeof questionInputSchema>;
 
 export const taskInputSchema = z.object({
   title: z.string().min(1).max(200),

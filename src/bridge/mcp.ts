@@ -7,7 +7,7 @@ import { branchFor, buildProtocol } from "../shared/protocol.js";
 import { TASK_STATUSES, type Project } from "../shared/types.js";
 import { VERSION } from "../version.js";
 import { HubClient, type HubResponse } from "./client.js";
-import { fmtAgents, fmtLocks, fmtMessages, fmtTask, fmtTaskLine, fmtTasks, fmtUnread } from "./format.js";
+import { fmtAgents, fmtAskResult, fmtLocks, fmtMessages, fmtTask, fmtTaskLine, fmtTasks, fmtUnread } from "./format.js";
 
 const HEARTBEAT_MS = 15_000;
 const MAX_WAIT_S = 300;
@@ -94,13 +94,52 @@ export async function runMcpBridge(overrides: Partial<AgentConfig> = {}): Promis
     "send_message",
     {
       title: "Send message",
-      description: "Send a message to another agent by name, or to \"all\" to broadcast to every agent in the project.",
+      description:
+        "Send a message to another agent or human by name, or to \"all\" to broadcast. " +
+        "To answer a question you received, pass its id as reply_to (then `to` can be omitted).",
       inputSchema: {
-        to: z.string().describe('Recipient agent name, or "all"'),
+        to: z.string().optional().describe('Recipient name, or "all". Optional when reply_to is set'),
         body: z.string().min(1).max(20_000).describe("Message text; be concrete (task ids, file paths, what you need)"),
+        reply_to: z.number().int().positive().optional().describe("Id of the question you are answering"),
       },
     },
-    ({ to, body }) => run(() => client.sendMessage(to, body), (m) => `Sent message #${m.id} to ${m.to}.`),
+    ({ to, body, reply_to }) =>
+      run(
+        () => client.sendMessage(to, body, reply_to),
+        (m) => (m.replyTo ? `Answered question #${m.replyTo} (message #${m.id} to ${m.to}).` : `Sent message #${m.id} to ${m.to}.`),
+      ),
+  );
+
+  server.registerTool(
+    "ask",
+    {
+      title: "Ask a question",
+      description:
+        "Ask a question or request a decision THROUGH THE HUB and wait for the answer. Use this instead of asking in your " +
+        "local console or chat: nobody may be watching your terminal (you may run on a remote machine). " +
+        "Offer options when there are clear choices. By default it goes to whoever most recently asked you for something.",
+      inputSchema: {
+        question: z.string().min(1).max(5_000),
+        options: z.array(z.string().min(1).max(200)).max(10).optional().describe("Suggested answers, e.g. ['Option A', 'Option B']"),
+        to: z.string().optional().describe('Who should answer (agent/human name or "all"). Default: whoever gave you the request'),
+        timeout_s: z
+          .number()
+          .int()
+          .min(1)
+          .max(MAX_WAIT_S)
+          .optional()
+          .describe(`Seconds to wait for the answer (default ${cfg.waitTimeoutS})`),
+      },
+    },
+    async ({ question, options, to, timeout_s }, extra) => {
+      const timeout = timeout_s ?? cfg.waitTimeoutS;
+      try {
+        const res = await client.askAndWait({ body: question, options, to }, timeout, extra.signal);
+        return ok(fmtAskResult(res, timeout, "mcp"), res.unread);
+      } catch (err) {
+        return { content: [{ type: "text", text: `Error: ${(err as Error).message}` }], isError: true };
+      }
+    },
   );
 
   server.registerTool(
