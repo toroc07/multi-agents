@@ -84,7 +84,7 @@ export function createHub(opts: HubOptions): Hub {
   function wakeWaiters(project: string, message: Message): void {
     for (const [key, set] of waiters) {
       const [p, agent] = key.split("\u0000");
-      if (p !== project || agent === message.from) continue;
+      if (p !== project || agent === message.from || agent === message.actor) continue;
       if (message.to === BROADCAST || message.to === agent) for (const wake of [...set]) wake();
     }
   }
@@ -251,6 +251,7 @@ export function createHub(opts: HubOptions): Hub {
         const first = state.readMessages(p, name);
         if (first.length) return first;
         const timeoutS = Math.min(Math.max(Number(ctx.query.get("timeout")) || 50, 1), MAX_WAIT_S);
+        state.beginWait(p, name, Number(ctx.query.get("question")) || undefined);
         const key = waiterKey(p, name);
         await new Promise<void>((resolve) => {
           const set = waiters.get(key) ?? new Set();
@@ -265,10 +266,16 @@ export function createHub(opts: HubOptions): Hub {
           set.add(done);
           ctx.res.on("close", done);
         });
-        if (ctx.res.destroyed) return [];
-        state.identify(p, name);
-        return state.readMessages(p, name);
+        if (!ctx.res.destroyed) state.identify(p, name);
+        const messages = ctx.res.destroyed ? [] : state.readMessages(p, name);
+        state.endWait(p, name);
+        return messages;
       },
+    },
+    {
+      method: "GET",
+      pattern: new RegExp(`^${P}/log$`),
+      handler: (ctx) => state.log(project(ctx), Math.min(Number(ctx.query.get("limit")) || 300, 1000)),
     },
 
     // Tasks

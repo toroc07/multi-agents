@@ -1,4 +1,4 @@
-import type { Project } from "./types.js";
+import { DEFAULT_MAX_ACTIVE_TASKS, type Project } from "./types.js";
 
 /**
  * Agent-facing collaboration protocol. Written in English on purpose: every
@@ -38,6 +38,13 @@ export function branchFor(project: Project, agent: string, task?: number | strin
     .replaceAll("{task}", task === undefined ? "<task-id>" : String(task));
 }
 
+function limitText(project: Project): string {
+  const limit = project.maxActiveTasks ?? DEFAULT_MAX_ACTIVE_TASKS;
+  if (limit === 0) return "";
+  const what = limit === 1 ? "one active task" : `${limit} active tasks`;
+  return ` The hub lets you hold ${what} (claimed or in_progress) at a time: move it to review, done or blocked before claiming the next.`;
+}
+
 export function buildProtocol(
   project: Project,
   opts: { agentName?: string; iface?: ProtocolInterface } = {},
@@ -51,6 +58,7 @@ export function buildProtocol(
     return `\`${act.mcp}\` (CLI: \`${act.cli}\`)`;
   };
   const branch = branchFor(project, me ?? "<your-agent-name>");
+  const perTask = project.branchPattern.includes("{task}");
   const base = project.defaultBranch;
 
   const lines: string[] = [];
@@ -67,28 +75,35 @@ export function buildProtocol(
   lines.push(
     `1. **On start:** read the board and inbox: ${a("agents")}, ${a("read")}, ${a("tasks")}.`,
     `2. **One task at a time, always claimed:** pick an open task and claim it with ${a("claim")} before working. ` +
-      `If none fits, create one with ${a("create")} and claim it. Never work on a task claimed by another agent.`,
+      `If none fits, create one with ${a("create")} and claim it. Never work on a task claimed by another agent.` +
+      limitText(project),
     `3. **Lock before editing:** reserve the files or folders you are about to change with ${a("lock")} (folders lock everything inside). ` +
       `If a lock conflicts, message its owner with ${a("send")} or pick other work — do not edit locked paths.`,
-    `4. **Stay visible:** keep your status current with ${a("status")} (what you are doing right now).`,
+    `4. **Stay visible:** the hub shows your activity automatically (task claimed, files locked, waiting); add detail with ${a("status")} when useful.`,
     `5. **Check your inbox often:** every hub response tells you how many messages are unread; read them with ${a("read")}. ` +
       `When someone asks you a question (❓), answer it with ${a("reply")}.`,
     `6. **Never ask in your local console.** Nobody may be watching your terminal — you may be running unattended on a remote ` +
       `machine and requests may come from people on the dashboard. Whenever you need a decision, clarification or approval, ` +
       `ask through the hub with ${a("ask")} (offer options when there are clear choices), addressed to whoever gave you the request, ` +
       `and wait for the answer. Do not use your tool's built-in interactive question prompts for this.`,
-    `7. **When you finish a task:** ${a("update")} it to \`review\` or \`done\` with a short note, release locks with ${a("unlock")}, ` +
-      `and announce it to \`all\` with ${a("send")}.`,
-    `8. **When blocked:** set the task to \`blocked\` with a note explaining what you need and ${a("ask")} whoever can help.`,
-    `9. **When idle:** call ${a("wait")} to wait for new messages or assignments instead of stopping.`,
-    `10. Keep messages short and concrete (file paths, task ids, what you need).`,
+    `7. **When you finish a task:** ${a("update")} it to \`review\` (or \`done\` if no review is needed) with a short note of what you ` +
+      `did and how you verified it, then release your locks with ${a("unlock")}. The hub announces status changes to everyone (📢), ` +
+      `so only send a message when others need extra information.`,
+    `8. **Reviewing:** any agent may review a task in \`review\` that is not its own. Check the work (run the tests), then either ` +
+      `mark it \`done\` with ${a("update")} (after merging it, if that is your job) or send it back to \`in_progress\` with a note ` +
+      `listing the changes needed. When your own work gets merged, make sure its task ends up \`done\`.`,
+    `9. **When blocked:** set the task to \`blocked\` with a note explaining what you need and ${a("ask")} whoever can help.`,
+    `10. **When idle:** call ${a("wait")} to wait for new messages or assignments instead of stopping.`,
+    `11. Keep messages short and concrete (file paths, task ids, what you need).`,
   );
   lines.push("");
   lines.push(`## Version control — workflow \`${project.workflow}\``);
   if (project.workflow === "github" || project.workflow === "git") {
     const review = project.workflow === "github" ? "pull request" : "merge request (or whatever review flow the team uses)";
     lines.push(
-      `- Work only on your own branch: \`${branch}\`. Create it from the latest \`${base}\`:`,
+      perTask
+        ? `- Use one branch per task, named \`${branch}\` (the hub sets it on the task when you claim it). Create it from the latest \`${base}\`:`
+        : `- Work only on your own branch: \`${branch}\`. Create it from the latest \`${base}\`:`,
       `  \`git fetch origin && git switch -c ${branch} origin/${base}\` (or \`git switch ${branch}\` if it exists).`,
       `- Never commit or push directly to \`${base}\`, and never push to or rewrite another agent's branch.`,
       `- Commit small, focused changes; push your branch regularly so others can see progress.`,

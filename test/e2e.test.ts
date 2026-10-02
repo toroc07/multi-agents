@@ -190,6 +190,26 @@ describe("end to end", () => {
     expect(res.stdout).toContain("✅ Answer from bob: yes");
   });
 
+  it("shows automatic status, branch per task, hub announcements and reviewer close", async () => {
+    for (const t of hub.state.listTasks("e2e", { assignee: "bob" })) {
+      if (t.status === "claimed" || t.status === "in_progress") await call(bob, "update_task", { id: t.id, status: "done" });
+    }
+    await call(bob, "read_messages");
+    const created = await call(bob, "create_task", { title: "Add modulo operator" });
+    const id = Number(/#(\d+)/.exec(created.text)![1]);
+    const claimed = await call(bob, "claim_task", { id });
+    expect(claimed.text).toContain(`Work on branch agent/bob/task-${id}`);
+
+    const agents = await cli("carol", "agents");
+    expect(agents.stdout).toContain(`Working on #${id} Add modulo operator`);
+    expect((await cli("carol", "msg", "read")).stdout).toContain(`📢 hub: bob claimed #${id}`);
+
+    await call(bob, "update_task", { id, status: "review", note: "8/8 tests" });
+    const reviewed = await cli("carol", "task", "update", String(id), "--status", "done", "--note", "merged");
+    expect(reviewed.code).toBe(0);
+    expect((await call(bob, "read_messages")).text).toContain(`carol marked #${id} "Add modulo operator" as done (assignee: bob)`);
+  });
+
   it("keeps projects isolated and adapts instructions to the workflow", async () => {
     hub.state.upsertProject({ id: "shared-folder", workflow: "none" });
     const dave = await mcpAgent("dave", "shared-folder");

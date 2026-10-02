@@ -7,7 +7,7 @@ import { branchFor, buildProtocol } from "../shared/protocol.js";
 import { TASK_STATUSES, type Project } from "../shared/types.js";
 import { VERSION } from "../version.js";
 import { HubClient, type HubResponse } from "./client.js";
-import { fmtAgents, fmtAskResult, fmtLocks, fmtMessages, fmtTask, fmtTaskLine, fmtTasks, fmtUnread } from "./format.js";
+import { fmtAgents, fmtAskResult, fmtClaimed, fmtLocks, fmtMessages, fmtTask, fmtTaskLine, fmtTasks, fmtUnread } from "./format.js";
 
 const HEARTBEAT_MS = 15_000;
 const MAX_WAIT_S = 300;
@@ -52,7 +52,7 @@ export async function runMcpBridge(overrides: Partial<AgentConfig> = {}): Promis
             `You are "${agent.name}" (${[agent.client, agent.model].filter(Boolean).join(" / ")}) in project "${project.name}" (id ${project.id}).`,
             `Hub: ${cfg.hubUrl}`,
             `Workflow: ${project.workflow}${project.repoUrl ? ` · repo ${project.repoUrl}` : ""}`,
-            project.workflow === "none" ? "No version control: lock files before editing." : `Your branch: ${branchFor(project, agent.name)} (base ${project.defaultBranch})`,
+            project.workflow === "none" ? "No version control: lock files before editing." : `Your branches: ${branchFor(project, agent.name)} (base ${project.defaultBranch})`,
           ].join("\n"),
       ),
   );
@@ -81,7 +81,9 @@ export async function runMcpBridge(overrides: Partial<AgentConfig> = {}): Promis
     "set_status",
     {
       title: "Set my status",
-      description: "Tell everyone what you are doing right now (shown to other agents and on the dashboard). Optionally set your current git branch.",
+      description:
+        "Optionally add detail about what you are doing (shown to other agents and on the dashboard). The hub already tracks " +
+        "your activity from your actions (claimed task, locked files, waiting), so use this only for extra context. Optionally set your git branch.",
       inputSchema: {
         status: z.string().max(300).describe("Short description of your current activity, e.g. 'Implementing #4: login form'"),
         branch: z.string().max(200).optional().describe("Git branch you are working on"),
@@ -204,7 +206,7 @@ export async function runMcpBridge(overrides: Partial<AgentConfig> = {}): Promis
     "create_task",
     {
       title: "Create task",
-      description: "Add a task to the shared board. Optionally assign it to an agent (they get a message).",
+      description: "Add a task to the shared board. Optionally assign it to an agent. The hub announces it to everyone.",
       inputSchema: {
         title: z.string().min(1).max(200),
         description: z.string().max(20_000).optional().describe("What to do, acceptance criteria, relevant files"),
@@ -219,10 +221,12 @@ export async function runMcpBridge(overrides: Partial<AgentConfig> = {}): Promis
     "claim_task",
     {
       title: "Claim task",
-      description: "Take ownership of an open task before working on it. Fails if another agent already has it.",
+      description:
+        "Take ownership of an open task before working on it. Fails if another agent already has it, or if you already " +
+        "have an active task (finish or release it first). Returns the branch to work on.",
       inputSchema: { id: z.number().int().positive() },
     },
-    ({ id }) => run(() => client.claimTask(id), (t) => `Claimed ${fmtTaskLine(t)}`),
+    ({ id }) => run(() => client.claimTask(id), fmtClaimed),
   );
 
   server.registerTool(
@@ -231,7 +235,8 @@ export async function runMcpBridge(overrides: Partial<AgentConfig> = {}): Promis
       title: "Update task",
       description:
         "Update a task you own: status (in_progress, review, done, blocked, or open to release it), a progress note, " +
-        "your branch, or the review link (PR/MR URL).",
+        "your branch, or the review link (PR/MR URL). As a reviewer you may also move ANY task that is in review to done " +
+        "(approved/merged) or back to in_progress (changes requested, explain in the note). The hub announces status changes.",
       inputSchema: {
         id: z.number().int().positive(),
         status: z.enum(TASK_STATUSES).optional(),

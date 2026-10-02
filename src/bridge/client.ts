@@ -3,6 +3,7 @@ import type {
   AgentKind,
   AgentView,
   Lock,
+  LogEntry,
   Message,
   Overview,
   Project,
@@ -135,7 +136,7 @@ export class HubClient {
     let unread = initialUnread;
     while (Date.now() < deadline) {
       const left = Math.max(1, Math.round((deadline - Date.now()) / 1000));
-      const res = await this.waitForMessages(left, signal);
+      const res = await this.waitForMessages(left, signal, question.id);
       unread = res.unread;
       const answer = res.data.find((m) => m.replyTo === question.id);
       others.push(...res.data.filter((m) => m !== answer));
@@ -147,8 +148,13 @@ export class HubClient {
   readMessages(peek = false) {
     return this.request<Message[]>("GET", `${this.base}/messages?unread=1${peek ? "&peek=1" : ""}`);
   }
-  waitForMessages(timeoutS: number, signal?: AbortSignal) {
-    return this.request<Message[]>("GET", `${this.base}/messages/wait?timeout=${Math.round(timeoutS)}`, undefined, signal);
+  /** `questionId` tells the hub the agent is waiting for that answer (shown as its activity). */
+  waitForMessages(timeoutS: number, signal?: AbortSignal, questionId?: number) {
+    const q = `timeout=${Math.round(timeoutS)}${questionId ? `&question=${questionId}` : ""}`;
+    return this.request<Message[]>("GET", `${this.base}/messages/wait?${q}`, undefined, signal);
+  }
+  log(limit = 100) {
+    return this.request<LogEntry[]>("GET", `${this.base}/log?limit=${limit}`);
   }
 
   // Tasks

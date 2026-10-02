@@ -10,7 +10,8 @@ const HELP = `multi-agents v${VERSION} — let any AI coding agents collaborate 
 HUB (run once, on the host machine)
   multi-agents hub [--port 7777] [--host 0.0.0.0] [--token T] [--data-dir ./data]
   multi-agents project create <id> [--name N] [--workflow github|git|none] [--repo URL]
-                                   [--default-branch main] [--branch-pattern "agent/{agent}"]
+                                   [--default-branch main] [--branch-pattern "agent/{agent}/task-{task}"]
+                                   [--max-active-tasks 1]   (0 = unlimited)
   multi-agents project list | project show | project update <id> [...same flags]
 
 AGENT SETUP (each machine, inside the project folder)
@@ -62,6 +63,7 @@ async function main(): Promise<number> {
       repo: { type: "string" },
       "default-branch": { type: "string" },
       "branch-pattern": { type: "string" },
+      "max-active-tasks": { type: "string" },
       // init
       dir: { type: "string" },
       // agent commands

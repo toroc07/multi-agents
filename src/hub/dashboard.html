@@ -51,6 +51,7 @@
   .feed { max-height: 520px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
   .msg { border-bottom: 1px solid var(--border); padding-bottom: 6px; overflow-wrap: anywhere; white-space: pre-wrap; }
   .msg b { font-weight: 600; }
+  .msg.ev { font-size: 12px; }
   .msg.q { border-left: 3px solid var(--warn); padding-left: 8px; }
   .msg.a { border-left: 3px solid var(--ok); padding-left: 8px; }
   .questions { border-color: var(--warn); }
@@ -149,6 +150,26 @@
   $("humanName").value = store.get("human") || "humano";
   $("humanName").addEventListener("change", (e) => store.set("human", e.target.value.trim() || "humano"));
 
+  // Mirrors src/shared/activity.ts, in Spanish for people.
+  function describeActivity(a) {
+    const task = a.taskId ? `#${a.taskId}${a.title ? ` ${a.title}` : ""}` : "";
+    switch (a.kind) {
+      case "working": return `Trabajando en ${task}`;
+      case "editing": return `Editando ${(a.paths || []).join(", ")}${task ? ` (${task})` : ""}`;
+      case "in_review": return `Esperando revisión de ${task}`;
+      case "blocked": return `Bloqueado en ${task}`;
+      case "waiting": return "Esperando mensajes";
+      case "asking": return `Esperando respuesta de ${a.to === "all" ? "todos" : a.to} a la pregunta #${a.questionId}`;
+      case "idle": return "Inactivo";
+      default: return "";
+    }
+  }
+  function currentStatus(agent) {
+    const manualAt = agent.status ? (agent.statusAt || 0) : -1;
+    if (agent.activity && agent.activity.at > manualAt) return describeActivity(agent.activity);
+    return agent.status;
+  }
+
   function ago(ts) {
     const s = Math.max(0, Math.round((Date.now() - ts) / 1000));
     if (s < 60) return `hace ${s}s`;
@@ -235,7 +256,7 @@
       <div class="agent">
         <div class="name"><span class="dot ${a.online ? "on" : ""}"></span>${esc(a.name)}</div>
         <div><span class="chip">${esc(a.client)}</span>${a.model ? `<span class="chip">${esc(a.model)}</span>` : ""}<span class="chip">${esc(a.kind)}</span></div>
-        ${a.status ? `<div style="margin-top:6px">${esc(a.status)}</div>` : ""}
+        ${a.online && currentStatus(a) ? `<div style="margin-top:6px">${esc(currentStatus(a))}</div>` : ""}
         ${a.branch ? `<div class="muted">rama ${esc(a.branch)}</div>` : ""}
         <div class="muted">${a.online ? "activo" : "visto"} ${ago(a.lastSeen)}</div>
       </div>`).join("") : `<p class="empty">Ningún agente conectado todavía.</p>`;
@@ -275,6 +296,7 @@
         return `<div class="msg q">${head}<br>❓ ${esc(m.body)}${opts}${status}</div>`;
       }
       if (m.kind === "answer") return `<div class="msg a">${head}<br>↩ <span class="muted">respuesta a #${m.replyTo}:</span> ${esc(m.body)}</div>`;
+      if (m.kind === "event") return `<div class="msg ev"><span class="muted">📢 ${esc(m.body)} · ${ago(m.createdAt)}</span></div>`;
       return `<div class="msg">${head}<br>${esc(m.body)}</div>`;
     }).join("") : `<p class="empty">Sin mensajes todavía.</p>`;
   }

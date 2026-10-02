@@ -2,7 +2,7 @@ import type { AgentConfig } from "../config.js";
 import { buildProtocol } from "../shared/protocol.js";
 import { TASK_STATUSES, WORKFLOWS, type TaskStatus, type Workflow } from "../shared/types.js";
 import { HubClient, type HubResponse } from "./client.js";
-import { fmtAgents, fmtAskResult, fmtLocks, fmtMessages, fmtTask, fmtTaskLine, fmtTasks, fmtUnread } from "./format.js";
+import { fmtAgents, fmtAskResult, fmtClaimed, fmtLocks, fmtMessages, fmtTask, fmtTaskLine, fmtTasks, fmtUnread } from "./format.js";
 
 /** Option values parsed by cli.ts (node:util parseArgs). */
 export type Opts = Record<string, string | boolean | undefined>;
@@ -119,7 +119,7 @@ export async function runAgentCommand(cfg: AgentConfig, command: string, args: s
           );
         }
         case "claim":
-          return out(await client.claimTask(int(rest[0], "task id")), (t) => `Claimed ${fmtTaskLine(t)}`);
+          return out(await client.claimTask(int(rest[0], "task id")), fmtClaimed);
         case "update": {
           const id = int(rest[0], "task id");
           return out(
@@ -176,8 +176,9 @@ export async function runAgentCommand(cfg: AgentConfig, command: string, args: s
               repoUrl: str(opts.repo),
               defaultBranch: str(opts["default-branch"]),
               branchPattern: str(opts["branch-pattern"]),
+              maxActiveTasks: str(opts["max-active-tasks"]) === undefined ? undefined : Number(opts["max-active-tasks"]),
             }),
-            (p) => `Project "${p.id}" saved: ${p.name} [${p.workflow}] base ${p.defaultBranch}, branches ${p.branchPattern}${p.repoUrl ? `, repo ${p.repoUrl}` : ""}`,
+            (p) => `Project "${p.id}" saved: ${p.name} [${p.workflow}] base ${p.defaultBranch}, branches ${p.branchPattern}, max active tasks ${p.maxActiveTasks ?? 1}${p.repoUrl ? `, repo ${p.repoUrl}` : ""}`,
           );
         }
         default:

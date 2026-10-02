@@ -1,3 +1,4 @@
+import { currentStatus } from "../shared/activity.js";
 import type { AgentView, Lock, Message, Task } from "../shared/types.js";
 
 /** Plain-text renderers shared by the MCP tools and the CLI; compact so they cost agents few tokens. */
@@ -31,6 +32,7 @@ export function fmtMessage(m: Message, iface: Iface = "mcp"): string {
     return lines.join("\n");
   }
   if (m.kind === "answer") return `${head} ↩ answer to #${m.replyTo}: ${m.body}`;
+  if (m.kind === "event") return `[#${m.id} ${ago(m.createdAt)}] 📢 hub: ${m.body}`;
   return `${head}: ${m.body}`;
 }
 
@@ -64,10 +66,11 @@ export function fmtAgents(agents: AgentView[], me?: string): string {
     .map((a) => {
       const who = `${a.online ? "●" : "○"} ${a.name}${a.name === me ? " (you)" : ""}`;
       const tool = [a.client, a.model].filter(Boolean).join(" / ");
+      const status = currentStatus(a);
       const extra = [
         tool && `[${tool}]`,
         a.branch && `branch ${a.branch}`,
-        a.status && `— ${a.status}`,
+        status && `— ${status}`,
         !a.online && `(last seen ${ago(a.lastSeen)})`,
       ]
         .filter(Boolean)
@@ -83,6 +86,10 @@ export function fmtTaskLine(t: Task): string {
   if (t.branch) parts.push(`branch ${t.branch}`);
   if (t.reviewUrl) parts.push(`review ${t.reviewUrl}`);
   return parts.join(" · ");
+}
+
+export function fmtClaimed(t: Task): string {
+  return `Claimed ${fmtTaskLine(t)}${t.branch ? `\nWork on branch ${t.branch} (create it from the latest base branch if it does not exist).` : ""}`;
 }
 
 export function fmtTasks(tasks: Task[]): string {
