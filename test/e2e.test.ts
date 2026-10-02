@@ -1,5 +1,7 @@
 import { execFile } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { AddressInfo } from "node:net";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -208,6 +210,23 @@ describe("end to end", () => {
     const reviewed = await cli("carol", "task", "update", String(id), "--status", "done", "--note", "merged");
     expect(reviewed.code).toBe(0);
     expect((await call(bob, "read_messages")).text).toContain(`carol marked #${id} "Add modulo operator" as done (assignee: bob)`);
+  });
+
+  it("starts the bridge from --config alone, with no secrets in the client config", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "multi-agents-e2e-"));
+    const configPath = join(dir, ".multi-agents.json");
+    writeFileSync(configPath, JSON.stringify({ hubUrl, token: TOKEN, project: "e2e", agentName: "from-file", agentClient: "opencode" }));
+    const env = { ...(process.env as Record<string, string>) };
+    for (const k of ["HUB_URL", "MULTI_AGENTS_TOKEN", "PROJECT", "AGENT_NAME", "AGENT_CLIENT", "MULTI_AGENTS_CONFIG"]) delete env[k];
+    const client = new Client({ name: "test-from-file", version: "0.0.0" });
+    // cwd is elsewhere on purpose: the explicit --config must win over any lookup.
+    await client.connect(
+      new StdioClientTransport({ command: process.execPath, args: [CLI, "connect", "--config", configPath], env, cwd: tmpdir(), stderr: "ignore" }),
+    );
+    clients.push(client);
+    expect((await call(client, "whoami")).text).toContain('You are "from-file" (opencode) in project "e2e"');
+    await client.close();
+    rmSync(dir, { recursive: true, force: true });
   });
 
   it("keeps projects isolated and adapts instructions to the workflow", async () => {

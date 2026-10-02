@@ -15,8 +15,8 @@ const MAX_WAIT_S = 300;
 type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean };
 
 /** Runs the stdio MCP server that connects one agent (any MCP client) to the hub. */
-export async function runMcpBridge(overrides: Partial<AgentConfig> = {}): Promise<void> {
-  const cfg = loadConfig(overrides);
+export async function runMcpBridge(overrides: Partial<AgentConfig> = {}, configFile?: string): Promise<void> {
+  const cfg = loadConfig(overrides, configFile);
   const client = new HubClient(cfg, { kind: "mcp", sessionId: randomUUID() });
   const log = (...args: unknown[]) => console.error("[multi-agents]", ...args);
 

@@ -31,8 +31,14 @@ export function findConfigFile(start = process.cwd()): string | undefined {
   }
 }
 
-function readFileConfig(): FileConfig {
-  const file = findConfigFile();
+/**
+ * `explicit` (from --config or MULTI_AGENTS_CONFIG) must exist; `false` means
+ * "no file"; otherwise the nearest file up from cwd is used, if any.
+ */
+function readFileConfig(explicit?: string | false): FileConfig {
+  if (explicit === false) return {};
+  if (explicit && !existsSync(resolve(explicit))) throw new Error(`Config file not found: ${resolve(explicit)}`);
+  const file = explicit ? resolve(explicit) : findConfigFile();
   if (!file) return {};
   try {
     return JSON.parse(readFileSync(file, "utf8")) as FileConfig;
@@ -41,8 +47,8 @@ function readFileConfig(): FileConfig {
   }
 }
 
-export function loadConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
-  const file = readFileConfig();
+export function loadConfig(overrides: Partial<AgentConfig> = {}, configFile?: string | false): AgentConfig {
+  const file = readFileConfig(configFile ?? process.env.MULTI_AGENTS_CONFIG);
   const env = process.env;
   const wait = Number(overrides.waitTimeoutS ?? env.WAIT_TIMEOUT_S ?? file.waitTimeoutS ?? DEFAULT_WAIT_TIMEOUT_S);
   return {

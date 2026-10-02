@@ -2,7 +2,9 @@
 import { parseArgs } from "node:util";
 import { HubClientError } from "./bridge/client.js";
 import { runAgentCommand, UsageError, type Opts } from "./bridge/commands.js";
-import { loadConfig, type AgentConfig } from "./config.js";
+import { existsSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { CONFIG_FILE, loadConfig, type AgentConfig } from "./config.js";
 import { VERSION } from "./version.js";
 
 const HELP = `multi-agents v${VERSION} — let any AI coding agents collaborate across machines
@@ -16,8 +18,10 @@ HUB (run once, on the host machine)
 
 AGENT SETUP (each machine, inside the project folder)
   multi-agents init --client <claude-code|codex|opencode|gemini|cursor|cline|goose|generic-mcp|cli>
-                    --name <agent-name> --hub <url> --token <token> [--project id] [--model M]
-  multi-agents connect            run the MCP bridge over stdio (used by MCP clients)
+                    --name <agent-name> --hub <url> --token <token> [--project id] [--model M] [--write]
+                    --write  also writes the MCP config into the client (Claude Code, Codex, OpenCode, Gemini, Cursor)
+  multi-agents connect [--config path/.multi-agents.json]
+                                  run the MCP bridge over stdio (used by MCP clients)
 
 AGENT COMMANDS (for agents without MCP, or humans)
   multi-agents status ["what I'm doing"] [--branch B]
@@ -33,9 +37,10 @@ AGENT COMMANDS (for agents without MCP, or humans)
   multi-agents lock <paths...> [--reason R] [--ttl minutes]  |  unlock [paths...] [--force]  |  locks
   multi-agents protocol           print the collaboration rules for this project
 
-GLOBAL FLAGS  --hub URL  --token T  --project ID  --name AGENT  --client C  --model M  --json
+GLOBAL FLAGS  --config FILE  --hub URL  --token T  --project ID  --name AGENT  --client C  --model M  --json
 ENV VARS      HUB_URL  MULTI_AGENTS_TOKEN  PROJECT  AGENT_NAME  AGENT_CLIENT  AGENT_MODEL  WAIT_TIMEOUT_S
-              (or a .multi-agents.json file in the project folder, created by \`init\`)
+              MULTI_AGENTS_CONFIG (path to a config file)
+              Without --config, the nearest .multi-agents.json (created by \`init\`) above the current folder is used.
 
 Docs: https://github.com/toroc07/multi-agents`;
 
@@ -64,8 +69,10 @@ async function main(): Promise<number> {
       "default-branch": { type: "string" },
       "branch-pattern": { type: "string" },
       "max-active-tasks": { type: "string" },
+      config: { type: "string" },
       // init
       dir: { type: "string" },
+      write: { type: "boolean" },
       // agent commands
       branch: { type: "string" },
       timeout: { type: "string" },
@@ -116,7 +123,7 @@ async function main(): Promise<number> {
 
   if (command === "connect") {
     const { runMcpBridge } = await import("./bridge/mcp.js");
-    await runMcpBridge(overrides);
+    await runMcpBridge(overrides, values.config);
     return -1; // the MCP transport keeps the process alive
   }
 
@@ -128,10 +135,14 @@ async function main(): Promise<number> {
     }
     if (!values.name && !process.env.AGENT_NAME) throw new UsageError("init needs --name <agent-name> (unique per agent)");
     delete overrides.agentClient;
-    return runInit(loadConfig(overrides), client as (typeof CLIENTS)[number], values.dir ?? process.cwd());
+    // Only the target folder's own config counts (never one found further up the tree).
+    const dir = resolve(values.dir ?? process.cwd());
+    const own = join(dir, CONFIG_FILE);
+    const cfg = loadConfig(overrides, existsSync(own) ? own : false);
+    return runInit(cfg, client as (typeof CLIENTS)[number], dir, { write: values.write === true });
   }
 
-  return runAgentCommand(loadConfig(overrides), command, args, values as Opts);
+  return runAgentCommand(loadConfig(overrides, values.config), command, args, values as Opts);
 }
 
 main().then(

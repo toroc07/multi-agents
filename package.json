@@ -35,7 +35,7 @@
     "prepare": "npm run build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "npm run build && vitest run",
-    "test:unit": "vitest run test/state.test.ts test/paths.test.ts",
+    "test:unit": "vitest run test/state.test.ts test/paths.test.ts test/init.test.ts",
     "hub": "node dist/cli.js hub"
   },
   "dependencies": {
