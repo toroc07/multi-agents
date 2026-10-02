@@ -13,6 +13,7 @@ import {
   lockInputSchema,
   messageInputSchema,
   projectInputSchema,
+  questionInputSchema,
   registerSchema,
   taskInputSchema,
   taskPatchSchema,
@@ -83,7 +84,7 @@ export function createHub(opts: HubOptions): Hub {
   function wakeWaiters(project: string, message: Message): void {
     for (const [key, set] of waiters) {
       const [p, agent] = key.split("\u0000");
-      if (p !== project || agent === message.from) continue;
+      if (p !== project || agent === message.from || agent === message.actor) continue;
       if (message.to === BROADCAST || message.to === agent) for (const wake of [...set]) wake();
     }
   }
@@ -204,6 +205,14 @@ export function createHub(opts: HubOptions): Hub {
       handler: async (ctx) => state.getAgent(project(ctx), state.updateAgent(project(ctx), me(ctx), await parse(ctx, agentPatchSchema)).name),
     },
     { method: "GET", pattern: new RegExp(`^${P}/agents$`), handler: (ctx) => state.listAgents(project(ctx)) },
+    {
+      method: "DELETE",
+      pattern: new RegExp(`^${P}/agents/([^/]+)$`),
+      handler: (ctx) => {
+        state.removeAgent(project(ctx), ctx.params[1]!, me(ctx));
+        return { ok: true };
+      },
+    },
 
     // Messages
     {
@@ -211,8 +220,23 @@ export function createHub(opts: HubOptions): Hub {
       pattern: new RegExp(`^${P}/messages$`),
       handler: async (ctx) => {
         const body = await parse(ctx, messageInputSchema);
-        return state.sendMessage(project(ctx), me(ctx), body.to, body.body);
+        return state.sendMessage(project(ctx), me(ctx), body.to, body.body, body.replyTo);
       },
+    },
+    {
+      method: "POST",
+      pattern: new RegExp(`^${P}/questions$`),
+      handler: async (ctx) => state.askQuestion(project(ctx), me(ctx), await parse(ctx, questionInputSchema)),
+    },
+    {
+      method: "GET",
+      pattern: new RegExp(`^${P}/questions$`),
+      handler: (ctx) => state.pendingQuestions(project(ctx)),
+    },
+    {
+      method: "GET",
+      pattern: new RegExp(`^${P}/messages/(\\d+)$`),
+      handler: (ctx) => state.getMessage(project(ctx), Number(ctx.params[1])),
     },
     {
       method: "GET",
@@ -235,6 +259,7 @@ export function createHub(opts: HubOptions): Hub {
         const first = state.readMessages(p, name);
         if (first.length) return first;
         const timeoutS = Math.min(Math.max(Number(ctx.query.get("timeout")) || 50, 1), MAX_WAIT_S);
+        state.beginWait(p, name, Number(ctx.query.get("question")) || undefined);
         const key = waiterKey(p, name);
         await new Promise<void>((resolve) => {
           const set = waiters.get(key) ?? new Set();
@@ -249,10 +274,16 @@ export function createHub(opts: HubOptions): Hub {
           set.add(done);
           ctx.res.on("close", done);
         });
-        if (ctx.res.destroyed) return [];
-        state.identify(p, name);
-        return state.readMessages(p, name);
+        if (!ctx.res.destroyed) state.identify(p, name);
+        const messages = ctx.res.destroyed ? [] : state.readMessages(p, name);
+        state.endWait(p, name);
+        return messages;
       },
+    },
+    {
+      method: "GET",
+      pattern: new RegExp(`^${P}/log$`),
+      handler: (ctx) => state.log(project(ctx), Math.min(Number(ctx.query.get("limit")) || 300, 1000)),
     },
 
     // Tasks
@@ -374,7 +405,7 @@ export function createHub(opts: HubOptions): Hub {
         }
         const data = await route.handler(ctx);
         const unread = ctx.agent && ctx.project ? state.unreadCount(ctx.project, ctx.agent) : undefined;
-        sendJson(res, method === "POST" && /\/(tasks|messages)$/.test(path) ? 201 : 200, data ?? null, unread);
+        sendJson(res, method === "POST" && /\/(tasks|messages|questions)$/.test(path) ? 201 : 200, data ?? null, unread);
       } catch (err) {
         if (err instanceof HubError) sendJson(res, err.status, { error: err.message });
         else if (err instanceof PathError) sendJson(res, 400, { error: err.message });

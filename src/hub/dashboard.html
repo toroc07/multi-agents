@@ -51,11 +51,29 @@
   .feed { max-height: 520px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
   .msg { border-bottom: 1px solid var(--border); padding-bottom: 6px; overflow-wrap: anywhere; white-space: pre-wrap; }
   .msg b { font-weight: 600; }
+  .msg.ev { font-size: 12px; }
+  .msg.q { border-left: 3px solid var(--warn); padding-left: 8px; }
+  .msg.a { border-left: 3px solid var(--ok); padding-left: 8px; }
+  .questions { border-color: var(--warn); }
+  .question { border: 1px solid var(--border); border-left: 3px solid var(--warn); border-radius: 6px; padding: 10px; margin-bottom: 8px; overflow-wrap: anywhere; }
+  .question .body { margin: 4px 0 8px; white-space: pre-wrap; }
+  .question.mine { background: color-mix(in srgb, var(--warn) 8%, transparent); }
+  .question .row button { font-weight: 500; }
+  .opt { background: transparent; color: var(--text); border-color: var(--warn); }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   td { padding: 4px 6px; border-bottom: 1px solid var(--border); vertical-align: top; overflow-wrap: anywhere; }
   .login { max-width: 420px; margin: 12vh auto; padding: 16px; }
   .empty { color: var(--muted); font-size: 13px; }
   .error { color: var(--bad); font-size: 13px; margin-top: 6px; min-height: 1em; }
+  .agent { position: relative; }
+  .agent .remove { position: absolute; top: 6px; right: 6px; }
+  .agent.off { opacity: .7; }
+  .task select { margin-top: 6px; width: 100%; font-size: 12px; padding: 2px 4px; }
+  .log { max-height: 360px; overflow-y: auto; font-size: 13px; }
+  .log div { padding: 4px 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+  .log .warn { color: var(--warn); }
+  .counter { font-size: 12px; color: var(--muted); min-width: 4.5em; text-align: right; }
+  .counter.near { color: var(--warn); }
 </style>
 </head>
 <body>
@@ -90,24 +108,41 @@
         <h2>Tablero de tareas</h2>
         <div class="board" id="board"></div>
         <form id="taskForm" class="row" style="margin-top:10px">
-          <input type="text" id="taskTitle" placeholder="Nueva tarea…" required>
+          <input type="text" id="taskTitle" placeholder="Nueva tarea…" required maxlength="200">
+          <span class="counter" id="taskTitleCount"></span>
           <select id="taskAssignee"></select>
           <button>Crear</button>
         </form>
-        <textarea id="taskDesc" placeholder="Descripción (opcional)" style="margin-top:6px"></textarea>
+        <textarea id="taskDesc" placeholder="Descripción (opcional): detalles, criterios de aceptación, archivos…" maxlength="20000" style="margin-top:6px"></textarea>
         <div class="error" id="taskError"></div>
       </section>
       <section>
         <h2>Bloqueos de archivos</h2>
         <div id="locks"></div>
       </section>
+      <section>
+        <h2>Actividad
+          <select id="logFilter" class="muted">
+            <option value="">todo</option>
+            <option value="task">tareas</option>
+            <option value="lock">bloqueos</option>
+            <option value="agent">agentes</option>
+            <option value="question">preguntas</option>
+          </select>
+        </h2>
+        <div class="log" id="log"></div>
+      </section>
     </div>
     <div class="col">
+      <section id="questionsSection" class="questions" hidden>
+        <h2>Preguntas pendientes <span class="muted" id="questionCount"></span></h2>
+        <div id="questions"></div>
+      </section>
       <section>
         <h2>Mensajes</h2>
         <form id="msgForm">
           <div class="row"><span class="muted">Para</span><select id="msgTo"></select></div>
-          <textarea id="msgBody" placeholder="Escribe a los agentes…" required style="margin-top:6px"></textarea>
+          <textarea id="msgBody" placeholder="Escribe a los agentes…" required maxlength="20000" style="margin-top:6px"></textarea>
           <div class="row" style="margin-top:6px"><button>Enviar</button><span class="error" id="msgError"></span></div>
         </form>
         <div class="feed" id="feed" style="margin-top:12px"></div>
@@ -126,6 +161,7 @@
   };
   const STATUSES = ["open", "claimed", "in_progress", "review", "done", "blocked"];
   const LABELS = { open: "Abiertas", claimed: "Reclamadas", in_progress: "En progreso", review: "En revisión", done: "Hechas", blocked: "Bloqueadas" };
+  const STATUS_ONE = { open: "abierta", claimed: "reclamada", in_progress: "en progreso", review: "en revisión", done: "hecha", blocked: "bloqueada" };
 
   let token = new URLSearchParams(location.hash.slice(1)).get("token") || store.get("token") || "";
   if (location.hash.includes("token=")) history.replaceState(null, "", location.pathname);
@@ -136,6 +172,26 @@
 
   $("humanName").value = store.get("human") || "humano";
   $("humanName").addEventListener("change", (e) => store.set("human", e.target.value.trim() || "humano"));
+
+  // Mirrors src/shared/activity.ts, in Spanish for people.
+  function describeActivity(a) {
+    const task = a.taskId ? `#${a.taskId}${a.title ? ` ${a.title}` : ""}` : "";
+    switch (a.kind) {
+      case "working": return `Trabajando en ${task}`;
+      case "editing": return `Editando ${(a.paths || []).join(", ")}${task ? ` (${task})` : ""}`;
+      case "in_review": return `Esperando revisión de ${task}`;
+      case "blocked": return `Bloqueado en ${task}`;
+      case "waiting": return "Esperando mensajes";
+      case "asking": return `Esperando respuesta de ${a.to === "all" ? "todos" : a.to} a la pregunta #${a.questionId}`;
+      case "idle": return "Inactivo";
+      default: return "";
+    }
+  }
+  function currentStatus(agent) {
+    const manualAt = agent.status ? (agent.statusAt || 0) : -1;
+    if (agent.activity && agent.activity.at > manualAt) return describeActivity(agent.activity);
+    return agent.status;
+  }
 
   function ago(ts) {
     const s = Math.max(0, Math.round((Date.now() - ts) / 1000));
@@ -156,7 +212,7 @@
     const res = await fetch(path, { method, headers, body: body ? JSON.stringify(body) : undefined });
     const data = await res.json().catch(() => null);
     if (res.status === 401) { showLogin("Token inválido"); throw new Error("unauthorized"); }
-    if (!res.ok) throw new Error(data?.error || "HTTP " + res.status);
+    if (!res.ok) throw new Error("No se pudo completar: " + (data?.error || "error HTTP " + res.status));
     return data;
   }
   const pp = () => `/api/projects/${encodeURIComponent(project)}`;
@@ -211,7 +267,7 @@
   function render(ov) {
     if (!ov) {
       $("agents").innerHTML = `<p class="empty">Aún no hay proyectos. Se crean cuando el primer agente se conecta o con <code>multi-agents project create</code>.</p>`;
-      ["board", "locks", "feed"].forEach((id) => ($(id).innerHTML = ""));
+      ["board", "locks", "feed", "log"].forEach((id) => ($(id).innerHTML = ""));
       return;
     }
     const p = ov.project;
@@ -220,10 +276,11 @@
     const online = ov.agents.filter((a) => a.online).length;
     $("agentCount").textContent = `${online} en línea / ${ov.agents.length}`;
     $("agents").innerHTML = ov.agents.length ? ov.agents.map((a) => `
-      <div class="agent">
+      <div class="agent ${a.online ? "" : "off"}">
+        ${a.online ? "" : `<button class="ghost remove" data-remove="${esc(a.name)}" title="Quitar este agente del proyecto">✕</button>`}
         <div class="name"><span class="dot ${a.online ? "on" : ""}"></span>${esc(a.name)}</div>
         <div><span class="chip">${esc(a.client)}</span>${a.model ? `<span class="chip">${esc(a.model)}</span>` : ""}<span class="chip">${esc(a.kind)}</span></div>
-        ${a.status ? `<div style="margin-top:6px">${esc(a.status)}</div>` : ""}
+        ${a.online && currentStatus(a) ? `<div style="margin-top:6px">${esc(currentStatus(a))}</div>` : ""}
         ${a.branch ? `<div class="muted">rama ${esc(a.branch)}</div>` : ""}
         <div class="muted">${a.online ? "activo" : "visto"} ${ago(a.lastSeen)}</div>
       </div>`).join("") : `<p class="empty">Ningún agente conectado todavía.</p>`;
@@ -237,6 +294,7 @@
           ${t.branch ? `<div class="muted">${esc(t.branch)}</div>` : ""}
           ${t.reviewUrl ? `<div><a href="${/^https?:\/\//.test(t.reviewUrl) ? esc(t.reviewUrl) : "#"}" target="_blank" rel="noopener">revisión</a></div>` : ""}
           ${t.notes.length ? `<div class="muted">📝 ${esc(t.notes.at(-1).author)}: ${esc(t.notes.at(-1).text)}</div>` : ""}
+          <select data-task="${t.id}" title="Cambiar estado">${STATUSES.map((x) => `<option value="${x}" ${x === s ? "selected" : ""}>${STATUS_ONE[x]}</option>`).join("")}</select>
         </div>`).join("")}</div>`;
     }).join("");
 
@@ -252,11 +310,127 @@
     const keepAs = $("taskAssignee").value;
     $("taskAssignee").innerHTML = `<option value="">sin asignar</option>` + names.map((n) => `<option ${n === keepAs ? "selected" : ""}>${esc(n)}</option>`).join("");
 
+    renderQuestions(ov);
+    renderLog(ov);
+
     const feed = $("feed");
-    feed.innerHTML = ov.messages.length ? ov.messages.slice().reverse().map((m) => `
-      <div class="msg"><b>${esc(m.from)}</b> → ${m.to === "all" ? "<i>todos</i>" : esc(m.to)} <span class="muted">${ago(m.createdAt)}</span><br>${esc(m.body)}</div>`).join("")
-      : `<p class="empty">Sin mensajes todavía.</p>`;
+    feed.innerHTML = ov.messages.length ? ov.messages.slice().reverse().map((m) => {
+      const head = `<b>${esc(m.from)}</b> → ${m.to === "all" ? "<i>todos</i>" : esc(m.to)} <span class="muted">#${m.id} · ${ago(m.createdAt)}</span>`;
+      if (m.kind === "question") {
+        const opts = m.options?.length ? `<div class="muted">Opciones: ${m.options.map((o, i) => `${i + 1}) ${esc(o)}`).join(" · ")}</div>` : "";
+        const status = m.answer ? `<div class="muted">✅ ${esc(m.answer.by)}: ${esc(m.answer.body)}</div>` : `<div class="muted">⏳ sin responder</div>`;
+        return `<div class="msg q">${head}<br>❓ ${esc(m.body)}${opts}${status}</div>`;
+      }
+      if (m.kind === "answer") return `<div class="msg a">${head}<br>↩ <span class="muted">respuesta a #${m.replyTo}:</span> ${esc(m.body)}</div>`;
+      if (m.kind === "event") return `<div class="msg ev"><span class="muted">📢 ${esc(m.body)} · ${ago(m.createdAt)}</span></div>`;
+      return `<div class="msg">${head}<br>${esc(m.body)}</div>`;
+    }).join("") : `<p class="empty">Sin mensajes todavía.</p>`;
   }
+
+  // Pending questions: re-rendered only when the set changes, so typing an answer is never interrupted.
+  const drafts = {};
+  let questionsKey = "";
+  function renderQuestions(ov) {
+    const me = $("humanName").value.trim();
+    const pending = ov.messages.filter((m) => m.kind === "question" && !m.answer);
+    const key = `${project}|${me}|${pending.map((q) => q.id).join(",")}`;
+    $("questionsSection").hidden = !pending.length;
+    $("questionCount").textContent = pending.length ? `(${pending.length})` : "";
+    if (key === questionsKey) return;
+    questionsKey = key;
+    $("questions").innerHTML = pending.slice().reverse().map((q) => `
+      <div class="question ${q.to === me || q.to === "all" ? "mine" : ""}">
+        <b>${esc(q.from)}</b> → ${q.to === "all" ? "<i>todos</i>" : esc(q.to)} <span class="muted">#${q.id} · ${ago(q.createdAt)}</span>
+        <div class="body">${esc(q.body)}</div>
+        ${q.options?.length ? `<div class="row">${q.options.map((o) => `<button class="opt" data-q="${q.id}" data-answer="${esc(o)}">${esc(o)}</button>`).join("")}</div>` : ""}
+        <form class="row answerForm" data-q="${q.id}" style="margin-top:6px">
+          <input type="text" placeholder="Otra respuesta…" value="${esc(drafts[q.id] || "")}" data-draft="${q.id}">
+          <button>Responder</button>
+        </form>
+      </div>`).join("");
+  }
+
+  async function answer(id, body) {
+    if (!body.trim()) return;
+    try {
+      await api("POST", `${pp()}/messages`, { replyTo: Number(id), body }, true);
+      delete drafts[id];
+    } catch (err) { alert(err.message); }
+  }
+
+  $("questions").addEventListener("click", (e) => {
+    const btn = e.target.closest("button.opt");
+    if (btn) answer(btn.dataset.q, btn.dataset.answer);
+  });
+  $("questions").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const input = e.target.querySelector("input");
+    answer(e.target.dataset.q, input.value);
+  });
+  $("questions").addEventListener("input", (e) => {
+    if (e.target.dataset.draft) drafts[e.target.dataset.draft] = e.target.value;
+  });
+  $("humanName").addEventListener("change", () => overview && render(overview));
+
+  // Activity history (entries come from the hub's log, rendered in Spanish here).
+  function describeLog(e) {
+    const who = `<b>${esc(e.actor)}</b>`;
+    const task = e.taskId ? `#${e.taskId}${e.title ? ` ${esc(e.title)}` : ""}` : "";
+    const paths = (e.paths || []).map((p) => `<code>${esc(p)}</code>`).join(", ");
+    const target = esc(e.target === "all" ? "todos" : e.target || "");
+    switch (e.type) {
+      case "agent.connected": return `🟢 ${who} se conectó`;
+      case "agent.disconnected": return e.reason === "timeout" ? `⚪ ${who} dejó de responder` : `⚪ ${who} se desconectó`;
+      case "agent.removed": return `🗑️ ${who} quitó del proyecto a <b>${target}</b>`;
+      case "task.created": return `📋 ${who} creó ${task}${e.target ? ` y se la asignó a <b>${target}</b>` : ""}`;
+      case "task.claimed": return `✋ ${who} reclamó ${task}`;
+      case "task.status": return `🔁 ${who} pasó ${task} de <i>${STATUS_ONE[e.previous] || e.previous}</i> a <i>${STATUS_ONE[e.status] || e.status}</i>`;
+      case "task.assigned": return `👤 ${who} asignó ${task} a <b>${target}</b>`;
+      case "lock.acquired": return `🔒 ${who} bloqueó ${paths}`;
+      case "lock.conflict": return `<span class="warn">⚠️ ${who} intentó bloquear ${paths}, pero los tiene <b>${target}</b></span>`;
+      case "lock.released":
+        if (e.reason === "forced") return `🔓 ${who} forzó la liberación de ${paths}${e.target ? ` (de <b>${target}</b>)` : ""}`;
+        if (e.reason === "disconnect") return `🔓 Se liberaron ${paths} de ${who} al desconectarse`;
+        if (e.reason === "expired") return `⌛ Expiraron los bloqueos de ${who}: ${paths}`;
+        return `🔓 ${who} liberó ${paths}`;
+      case "question.asked": return `❓ ${who} preguntó a <b>${target}</b> (#${e.questionId})`;
+      case "question.answered": return `✅ ${who} respondió la pregunta #${e.questionId} de <b>${target}</b>`;
+      default: return `${who} ${esc(e.type)}`;
+    }
+  }
+
+  function renderLog(ov) {
+    const filter = $("logFilter").value;
+    const entries = (ov.log || []).filter((e) => !filter || e.type.startsWith(filter + ".")).slice(-150).reverse();
+    $("log").innerHTML = entries.length
+      ? entries.map((e) => `<div>${describeLog(e)} <span class="muted">· ${ago(e.at)}</span></div>`).join("")
+      : `<p class="empty">Sin actividad todavía.</p>`;
+  }
+  $("logFilter").addEventListener("change", () => overview && renderLog(overview));
+
+  $("agents").addEventListener("click", async (e) => {
+    const name = e.target.closest("button[data-remove]")?.dataset.remove;
+    if (!name || !confirm(`¿Quitar a "${name}" del proyecto? Sus bloqueos se liberan y sus tareas activas vuelven a quedar abiertas.`)) return;
+    try { await api("DELETE", `${pp()}/agents/${encodeURIComponent(name)}`, null, true); } catch (err) { alert(err.message); }
+  });
+
+  $("board").addEventListener("change", async (e) => {
+    const id = e.target.dataset?.task;
+    if (!id) return;
+    try {
+      await api("PATCH", `${pp()}/tasks/${id}`, { status: e.target.value }, true);
+    } catch (err) {
+      alert(err.message);
+      refresh();
+    }
+  });
+
+  function updateCounter() {
+    const n = $("taskTitle").value.length;
+    $("taskTitleCount").textContent = n ? `${n}/200` : "";
+    $("taskTitleCount").classList.toggle("near", n > 180);
+  }
+  $("taskTitle").addEventListener("input", updateCounter);
 
   $("locks").addEventListener("click", async (e) => {
     const path = e.target.dataset?.unlock;
@@ -276,7 +450,7 @@
     e.preventDefault(); $("taskError").textContent = "";
     try {
       await api("POST", `${pp()}/tasks`, { title: $("taskTitle").value, description: $("taskDesc").value || undefined, assignee: $("taskAssignee").value || undefined }, true);
-      $("taskTitle").value = ""; $("taskDesc").value = "";
+      $("taskTitle").value = ""; $("taskDesc").value = ""; updateCounter();
     } catch (err) { $("taskError").textContent = err.message; }
   });
 

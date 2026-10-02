@@ -7,7 +7,7 @@ import { branchFor, buildProtocol } from "../shared/protocol.js";
 import { TASK_STATUSES, type Project } from "../shared/types.js";
 import { VERSION } from "../version.js";
 import { HubClient, type HubResponse } from "./client.js";
-import { fmtAgents, fmtLocks, fmtMessages, fmtTask, fmtTaskLine, fmtTasks, fmtUnread } from "./format.js";
+import { fmtAgents, fmtAskResult, fmtClaimed, fmtLocks, fmtMessages, fmtTask, fmtTaskLine, fmtTasks, fmtUnread } from "./format.js";
 
 const HEARTBEAT_MS = 15_000;
 const MAX_WAIT_S = 300;
@@ -15,8 +15,8 @@ const MAX_WAIT_S = 300;
 type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean };
 
 /** Runs the stdio MCP server that connects one agent (any MCP client) to the hub. */
-export async function runMcpBridge(overrides: Partial<AgentConfig> = {}): Promise<void> {
-  const cfg = loadConfig(overrides);
+export async function runMcpBridge(overrides: Partial<AgentConfig> = {}, configFile?: string): Promise<void> {
+  const cfg = loadConfig(overrides, configFile);
   const client = new HubClient(cfg, { kind: "mcp", sessionId: randomUUID() });
   const log = (...args: unknown[]) => console.error("[multi-agents]", ...args);
 
@@ -52,7 +52,7 @@ export async function runMcpBridge(overrides: Partial<AgentConfig> = {}): Promis
             `You are "${agent.name}" (${[agent.client, agent.model].filter(Boolean).join(" / ")}) in project "${project.name}" (id ${project.id}).`,
             `Hub: ${cfg.hubUrl}`,
             `Workflow: ${project.workflow}${project.repoUrl ? ` · repo ${project.repoUrl}` : ""}`,
-            project.workflow === "none" ? "No version control: lock files before editing." : `Your branch: ${branchFor(project, agent.name)} (base ${project.defaultBranch})`,
+            project.workflow === "none" ? "No version control: lock files before editing." : `Your branches: ${branchFor(project, agent.name)} (base ${project.defaultBranch})`,
           ].join("\n"),
       ),
   );
@@ -81,7 +81,9 @@ export async function runMcpBridge(overrides: Partial<AgentConfig> = {}): Promis
     "set_status",
     {
       title: "Set my status",
-      description: "Tell everyone what you are doing right now (shown to other agents and on the dashboard). Optionally set your current git branch.",
+      description:
+        "Optionally add detail about what you are doing (shown to other agents and on the dashboard). The hub already tracks " +
+        "your activity from your actions (claimed task, locked files, waiting), so use this only for extra context. Optionally set your git branch.",
       inputSchema: {
         status: z.string().max(300).describe("Short description of your current activity, e.g. 'Implementing #4: login form'"),
         branch: z.string().max(200).optional().describe("Git branch you are working on"),
@@ -94,13 +96,52 @@ export async function runMcpBridge(overrides: Partial<AgentConfig> = {}): Promis
     "send_message",
     {
       title: "Send message",
-      description: "Send a message to another agent by name, or to \"all\" to broadcast to every agent in the project.",
+      description:
+        "Send a message to another agent or human by name, or to \"all\" to broadcast. " +
+        "To answer a question you received, pass its id as reply_to (then `to` can be omitted).",
       inputSchema: {
-        to: z.string().describe('Recipient agent name, or "all"'),
+        to: z.string().optional().describe('Recipient name, or "all". Optional when reply_to is set'),
         body: z.string().min(1).max(20_000).describe("Message text; be concrete (task ids, file paths, what you need)"),
+        reply_to: z.number().int().positive().optional().describe("Id of the question you are answering"),
       },
     },
-    ({ to, body }) => run(() => client.sendMessage(to, body), (m) => `Sent message #${m.id} to ${m.to}.`),
+    ({ to, body, reply_to }) =>
+      run(
+        () => client.sendMessage(to, body, reply_to),
+        (m) => (m.replyTo ? `Answered question #${m.replyTo} (message #${m.id} to ${m.to}).` : `Sent message #${m.id} to ${m.to}.`),
+      ),
+  );
+
+  server.registerTool(
+    "ask",
+    {
+      title: "Ask a question",
+      description:
+        "Ask a question or request a decision THROUGH THE HUB and wait for the answer. Use this instead of asking in your " +
+        "local console or chat: nobody may be watching your terminal (you may run on a remote machine). " +
+        "Offer options when there are clear choices. By default it goes to whoever most recently asked you for something.",
+      inputSchema: {
+        question: z.string().min(1).max(5_000),
+        options: z.array(z.string().min(1).max(200)).max(10).optional().describe("Suggested answers, e.g. ['Option A', 'Option B']"),
+        to: z.string().optional().describe('Who should answer (agent/human name or "all"). Default: whoever gave you the request'),
+        timeout_s: z
+          .number()
+          .int()
+          .min(1)
+          .max(MAX_WAIT_S)
+          .optional()
+          .describe(`Seconds to wait for the answer (default ${cfg.waitTimeoutS})`),
+      },
+    },
+    async ({ question, options, to, timeout_s }, extra) => {
+      const timeout = timeout_s ?? cfg.waitTimeoutS;
+      try {
+        const res = await client.askAndWait({ body: question, options, to }, timeout, extra.signal);
+        return ok(fmtAskResult(res, timeout, "mcp"), res.unread);
+      } catch (err) {
+        return { content: [{ type: "text", text: `Error: ${(err as Error).message}` }], isError: true };
+      }
+    },
   );
 
   server.registerTool(
@@ -165,7 +206,7 @@ export async function runMcpBridge(overrides: Partial<AgentConfig> = {}): Promis
     "create_task",
     {
       title: "Create task",
-      description: "Add a task to the shared board. Optionally assign it to an agent (they get a message).",
+      description: "Add a task to the shared board. Optionally assign it to an agent. The hub announces it to everyone.",
       inputSchema: {
         title: z.string().min(1).max(200),
         description: z.string().max(20_000).optional().describe("What to do, acceptance criteria, relevant files"),
@@ -180,10 +221,12 @@ export async function runMcpBridge(overrides: Partial<AgentConfig> = {}): Promis
     "claim_task",
     {
       title: "Claim task",
-      description: "Take ownership of an open task before working on it. Fails if another agent already has it.",
+      description:
+        "Take ownership of an open task before working on it. Fails if another agent already has it, or if you already " +
+        "have an active task (finish or release it first). Returns the branch to work on.",
       inputSchema: { id: z.number().int().positive() },
     },
-    ({ id }) => run(() => client.claimTask(id), (t) => `Claimed ${fmtTaskLine(t)}`),
+    ({ id }) => run(() => client.claimTask(id), fmtClaimed),
   );
 
   server.registerTool(
@@ -192,7 +235,8 @@ export async function runMcpBridge(overrides: Partial<AgentConfig> = {}): Promis
       title: "Update task",
       description:
         "Update a task you own: status (in_progress, review, done, blocked, or open to release it), a progress note, " +
-        "your branch, or the review link (PR/MR URL).",
+        "your branch, or the review link (PR/MR URL). As a reviewer you may also move ANY task that is in review to done " +
+        "(approved/merged) or back to in_progress (changes requested, explain in the note). The hub announces status changes.",
       inputSchema: {
         id: z.number().int().positive(),
         status: z.enum(TASK_STATUSES).optional(),

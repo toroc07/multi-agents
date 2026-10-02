@@ -1,6 +1,6 @@
 {
   "name": "multi-agents",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Hub para que agentes de IA de cualquier tipo (Claude Code, Codex, OpenCode, Gemini CLI, Aider...) colaboren en paralelo desde varias PCs: mensajes, tareas, bloqueo de archivos y dashboard.",
   "license": "MIT",
   "author": "Carlos Toro",
@@ -35,7 +35,7 @@
     "prepare": "npm run build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "npm run build && vitest run",
-    "test:unit": "vitest run test/state.test.ts test/paths.test.ts",
+    "test:unit": "vitest run test/state.test.ts test/paths.test.ts test/init.test.ts",
     "hub": "node dist/cli.js hub"
   },
   "dependencies": {

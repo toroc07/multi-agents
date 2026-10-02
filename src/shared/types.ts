@@ -24,7 +24,26 @@ export interface Project {
   defaultBranch: string;
   /** Branch naming pattern; supports {agent} and {task}. */
   branchPattern: string;
+  /** Max tasks an agent may hold in claimed/in_progress at once (0 = unlimited). Missing = 1. */
+  maxActiveTasks?: number;
   createdAt: number;
+}
+
+export const DEFAULT_BRANCH_PATTERN = "agent/{agent}/task-{task}";
+export const DEFAULT_MAX_ACTIVE_TASKS = 1;
+
+/** What the hub observed an agent doing; shown when newer than its manual status. */
+export const ACTIVITY_KINDS = ["working", "editing", "in_review", "blocked", "waiting", "asking", "idle"] as const;
+export type ActivityKind = (typeof ACTIVITY_KINDS)[number];
+
+export interface AgentActivity {
+  kind: ActivityKind;
+  at: number;
+  taskId?: number;
+  title?: string;
+  paths?: string[];
+  questionId?: number;
+  to?: string;
 }
 
 export interface Agent {
@@ -32,7 +51,11 @@ export interface Agent {
   client: string;
   model?: string;
   kind: AgentKind;
+  /** Free text set by the agent with set_status. */
   status: string;
+  statusAt?: number;
+  /** Derived by the hub from the agent's actions. */
+  activity?: AgentActivity;
   branch?: string;
   sessionId?: string;
   connectedAt: number;
@@ -47,6 +70,20 @@ export interface AgentView extends Omit<Agent, "sessionId" | "lastReadId" | "dis
   online: boolean;
 }
 
+/**
+ * "message" is plain chat; a "question" waits for an "answer" that points back
+ * to it with replyTo; an "event" is an announcement from the hub itself.
+ */
+export const MESSAGE_KINDS = ["message", "question", "answer", "event"] as const;
+export type MessageKind = (typeof MESSAGE_KINDS)[number];
+
+export interface Answer {
+  by: string;
+  body: string;
+  at: number;
+  messageId: number;
+}
+
 export interface Message {
   id: number;
   from: string;
@@ -54,6 +91,50 @@ export interface Message {
   to: string;
   body: string;
   createdAt: number;
+  /** Missing on messages stored before v0.2; treat as "message". */
+  kind?: MessageKind;
+  /** Suggested choices for a question. */
+  options?: string[];
+  /** Question this message answers. */
+  replyTo?: number;
+  /** First answer received, stored on the question itself. */
+  answer?: Answer;
+  /** For events: the agent whose action is announced (it does not receive its own event). */
+  actor?: string;
+}
+
+export const LOG_TYPES = [
+  "agent.connected",
+  "agent.disconnected",
+  "agent.removed",
+  "task.created",
+  "task.claimed",
+  "task.status",
+  "task.assigned",
+  "lock.acquired",
+  "lock.released",
+  "lock.conflict",
+  "question.asked",
+  "question.answered",
+] as const;
+export type LogType = (typeof LOG_TYPES)[number];
+
+/** One line of the project's activity history (shown on the dashboard). */
+export interface LogEntry {
+  id: number;
+  at: number;
+  actor: string;
+  type: LogType;
+  taskId?: number;
+  title?: string;
+  status?: TaskStatus;
+  previous?: TaskStatus;
+  /** Assignee, question recipient, or lock holder depending on the type. */
+  target?: string;
+  paths?: string[];
+  questionId?: number;
+  /** Why a lock was released or an agent disconnected. */
+  reason?: "manual" | "forced" | "disconnect" | "timeout" | "expired" | "closed";
 }
 
 export interface TaskNote {
@@ -91,6 +172,7 @@ export interface Overview {
   tasks: Task[];
   locks: Lock[];
   messages: Message[];
+  log: LogEntry[];
 }
 
 // ---------- Request schemas (validated by the hub) ----------
@@ -102,6 +184,7 @@ export const projectInputSchema = z.object({
   repoUrl: z.string().max(500).optional(),
   defaultBranch: z.string().min(1).max(100).optional(),
   branchPattern: z.string().min(1).max(100).optional(),
+  maxActiveTasks: z.number().int().min(0).max(50).optional(),
 });
 export type ProjectInput = z.infer<typeof projectInputSchema>;
 
@@ -118,9 +201,19 @@ export const agentPatchSchema = z.object({
 });
 
 export const messageInputSchema = z.object({
-  to: z.string().min(1).max(40),
+  /** Optional when replying: defaults to the question's author. */
+  to: z.string().min(1).max(40).optional(),
   body: z.string().min(1).max(20_000),
+  replyTo: z.number().int().positive().optional(),
 });
+
+export const questionInputSchema = z.object({
+  /** Who should answer; defaults to whoever most recently asked this agent for something. */
+  to: z.string().min(1).max(40).optional(),
+  body: z.string().min(1).max(5_000),
+  options: z.array(z.string().min(1).max(200)).max(10).optional(),
+});
+export type QuestionInput = z.infer<typeof questionInputSchema>;
 
 export const taskInputSchema = z.object({
   title: z.string().min(1).max(200),

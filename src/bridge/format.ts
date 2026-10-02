@@ -1,3 +1,4 @@
+import { currentStatus } from "../shared/activity.js";
 import type { AgentView, Lock, Message, Task } from "../shared/types.js";
 
 /** Plain-text renderers shared by the MCP tools and the CLI; compact so they cost agents few tokens. */
@@ -14,11 +15,49 @@ export function inMinutes(ts: number, now = Date.now()): string {
   return `${Math.max(0, Math.round((ts - now) / 60_000))}m`;
 }
 
-export function fmtMessages(messages: Message[]): string {
+export type Iface = "mcp" | "cli";
+
+export function replyHint(id: number, iface: Iface): string {
+  return iface === "mcp"
+    ? `answer with send_message(reply_to=${id}, body=...)`
+    : `answer with: multi-agents msg send --reply-to ${id} "<answer>"`;
+}
+
+export function fmtMessage(m: Message, iface: Iface = "mcp"): string {
+  const head = `[#${m.id} ${ago(m.createdAt)}] ${m.from} → ${m.to}`;
+  if (m.kind === "question") {
+    const lines = [`${head} ❓ QUESTION: ${m.body}`];
+    if (m.options?.length) lines.push(`   options: ${m.options.map((o, i) => `${i + 1}) ${o}`).join("  ")}`);
+    lines.push(m.answer ? `   answered by ${m.answer.by}: ${m.answer.body}` : `   (${replyHint(m.id, iface)})`);
+    return lines.join("\n");
+  }
+  if (m.kind === "answer") return `${head} ↩ answer to #${m.replyTo}: ${m.body}`;
+  if (m.kind === "event") return `[#${m.id} ${ago(m.createdAt)}] 📢 hub: ${m.body}`;
+  return `${head}: ${m.body}`;
+}
+
+export function fmtAskResult(
+  res: { question: Message; answer?: Message; others: Message[] },
+  timeoutS: number,
+  iface: Iface = "mcp",
+): string {
+  const lines = [`Question #${res.question.id} sent to ${res.question.to}.`];
+  if (res.answer) {
+    lines.push(`✅ Answer from ${res.answer.from}: ${res.answer.body}`);
+  } else {
+    const wait = iface === "mcp" ? "call wait_for_messages" : "run `multi-agents msg wait`";
+    lines.push(
+      `No answer yet after ${timeoutS}s. Continue with work that does not depend on it, or ${wait}; ` +
+        `the answer will arrive as a message "↩ answer to #${res.question.id}". Do not ask in your local console instead.`,
+    );
+  }
+  if (res.others.length) lines.push("", "Other messages received meanwhile:", fmtMessages(res.others, iface));
+  return lines.join("\n");
+}
+
+export function fmtMessages(messages: Message[], iface: Iface = "mcp"): string {
   if (!messages.length) return "No new messages.";
-  return messages
-    .map((m) => `[#${m.id} ${ago(m.createdAt)}] ${m.from} → ${m.to === "all" ? "all" : m.to}: ${m.body}`)
-    .join("\n");
+  return messages.map((m) => fmtMessage(m, iface)).join("\n");
 }
 
 export function fmtAgents(agents: AgentView[], me?: string): string {
@@ -27,10 +66,11 @@ export function fmtAgents(agents: AgentView[], me?: string): string {
     .map((a) => {
       const who = `${a.online ? "●" : "○"} ${a.name}${a.name === me ? " (you)" : ""}`;
       const tool = [a.client, a.model].filter(Boolean).join(" / ");
+      const status = currentStatus(a);
       const extra = [
         tool && `[${tool}]`,
         a.branch && `branch ${a.branch}`,
-        a.status && `— ${a.status}`,
+        status && `— ${status}`,
         !a.online && `(last seen ${ago(a.lastSeen)})`,
       ]
         .filter(Boolean)
@@ -46,6 +86,10 @@ export function fmtTaskLine(t: Task): string {
   if (t.branch) parts.push(`branch ${t.branch}`);
   if (t.reviewUrl) parts.push(`review ${t.reviewUrl}`);
   return parts.join(" · ");
+}
+
+export function fmtClaimed(t: Task): string {
+  return `Claimed ${fmtTaskLine(t)}${t.branch ? `\nWork on branch ${t.branch} (create it from the latest base branch if it does not exist).` : ""}`;
 }
 
 export function fmtTasks(tasks: Task[]): string {

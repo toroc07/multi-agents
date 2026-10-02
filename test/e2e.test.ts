@@ -1,5 +1,7 @@
 import { execFile } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { AddressInfo } from "node:net";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -83,7 +85,7 @@ describe("end to end", () => {
     const { tools } = await alice.listTools();
     expect(tools.map((t) => t.name)).toEqual(
       expect.arrayContaining([
-        "whoami", "get_project", "list_agents", "set_status", "send_message", "read_messages", "wait_for_messages",
+        "whoami", "get_project", "list_agents", "set_status", "send_message", "ask", "read_messages", "wait_for_messages",
         "list_tasks", "get_task", "create_task", "claim_task", "update_task", "lock_files", "unlock_files", "list_locks",
       ]),
     );
@@ -152,6 +154,79 @@ describe("end to end", () => {
     await until(() => hub.state.listLocks("e2e").length === 0);
     expect(hub.state.getAgent("e2e", "alice").online).toBe(false);
     expect((await call(bob, "lock_files", { paths: ["src/auth"] })).isError).toBe(false);
+  });
+
+  it("routes an agent's question to the human who made the request and returns the answer", async () => {
+    const human = (path: string, body: unknown) =>
+      fetch(`${hubUrl}/api/projects/e2e${path}`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${TOKEN}`, "x-agent": "carlos", "x-agent-kind": "human", "content-type": "application/json" },
+        body: JSON.stringify(body),
+      }).then((r) => r.json());
+
+    await human("/messages", { to: "bob", body: "Add a guard so division by zero is impossible" });
+    await call(bob, "read_messages");
+    const asking = call(bob, "ask", { question: "How should I guard it?", options: ["Throw an error", "Return null"], timeout_s: 20 });
+
+    let question: { id: number; to: string; options: string[] } | undefined;
+    await until(() => !!(question = hub.state.pendingQuestions("e2e")[0] as typeof question));
+    expect(question).toMatchObject({ to: "carlos", options: ["Throw an error", "Return null"] });
+
+    await human("/messages", { replyTo: question!.id, body: "Throw an error" });
+    const res = await asking;
+    expect(res.isError).toBe(false);
+    expect(res.text).toContain("✅ Answer from carlos: Throw an error");
+    expect(hub.state.pendingQuestions("e2e")).toHaveLength(0);
+  });
+
+  it("lets a CLI agent ask and an MCP agent answer with reply_to", async () => {
+    const asking = cli("carol", "ask", "Can I take #2?", "--to", "bob", "--options", "yes|no", "--timeout", "20");
+    let id = 0;
+    await until(() => (id = hub.state.pendingQuestions("e2e").find((q) => q.from === "carol")?.id ?? 0) > 0);
+    const inbox = await call(bob, "read_messages");
+    expect(inbox.text).toContain("❓ QUESTION: Can I take #2?");
+    expect(inbox.text).toContain(`reply_to=${id}`);
+    expect((await call(bob, "send_message", { reply_to: id, body: "yes" })).text).toContain(`Answered question #${id}`);
+    const res = await asking;
+    expect(res.code).toBe(0);
+    expect(res.stdout).toContain("✅ Answer from bob: yes");
+  });
+
+  it("shows automatic status, branch per task, hub announcements and reviewer close", async () => {
+    for (const t of hub.state.listTasks("e2e", { assignee: "bob" })) {
+      if (t.status === "claimed" || t.status === "in_progress") await call(bob, "update_task", { id: t.id, status: "done" });
+    }
+    await call(bob, "read_messages");
+    const created = await call(bob, "create_task", { title: "Add modulo operator" });
+    const id = Number(/#(\d+)/.exec(created.text)![1]);
+    const claimed = await call(bob, "claim_task", { id });
+    expect(claimed.text).toContain(`Work on branch agent/bob/task-${id}`);
+
+    const agents = await cli("carol", "agents");
+    expect(agents.stdout).toContain(`Working on #${id} Add modulo operator`);
+    expect((await cli("carol", "msg", "read")).stdout).toContain(`📢 hub: bob claimed #${id}`);
+
+    await call(bob, "update_task", { id, status: "review", note: "8/8 tests" });
+    const reviewed = await cli("carol", "task", "update", String(id), "--status", "done", "--note", "merged");
+    expect(reviewed.code).toBe(0);
+    expect((await call(bob, "read_messages")).text).toContain(`carol marked #${id} "Add modulo operator" as done (assignee: bob)`);
+  });
+
+  it("starts the bridge from --config alone, with no secrets in the client config", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "multi-agents-e2e-"));
+    const configPath = join(dir, ".multi-agents.json");
+    writeFileSync(configPath, JSON.stringify({ hubUrl, token: TOKEN, project: "e2e", agentName: "from-file", agentClient: "opencode" }));
+    const env = { ...(process.env as Record<string, string>) };
+    for (const k of ["HUB_URL", "MULTI_AGENTS_TOKEN", "PROJECT", "AGENT_NAME", "AGENT_CLIENT", "MULTI_AGENTS_CONFIG"]) delete env[k];
+    const client = new Client({ name: "test-from-file", version: "0.0.0" });
+    // cwd is elsewhere on purpose: the explicit --config must win over any lookup.
+    await client.connect(
+      new StdioClientTransport({ command: process.execPath, args: [CLI, "connect", "--config", configPath], env, cwd: tmpdir(), stderr: "ignore" }),
+    );
+    clients.push(client);
+    expect((await call(client, "whoami")).text).toContain('You are "from-file" (opencode) in project "e2e"');
+    await client.close();
+    rmSync(dir, { recursive: true, force: true });
   });
 
   it("keeps projects isolated and adapts instructions to the workflow", async () => {
