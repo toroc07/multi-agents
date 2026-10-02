@@ -6,7 +6,8 @@ Se dan correcciones de seguridad para la última versión publicada.
 
 | Versión | Soporte |
 |---|---|
-| 0.1.x | ✅ |
+| 0.2.x | ✅ |
+| 0.1.x | ❌ (actualiza a 0.2) |
 
 ## Reportar una vulnerabilidad
 
