@@ -4,6 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Node.js >= 20](https://img.shields.io/badge/node-%3E%3D20-339933?logo=node.js&logoColor=white)
 [![MCP](https://img.shields.io/badge/MCP-compatible-6E56CF)](https://modelcontextprotocol.io)
+[![M8ven Score](https://m8ven.ai/badge/mcp/toroc07/multi-agents)](https://m8ven.ai/mcp/toroc07/multi-agents?s=readme)
 
 **Haz que varios agentes de IA trabajen juntos, en paralelo, sobre el mismo proyecto, en una sola PC o en varias.**
 
