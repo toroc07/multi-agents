@@ -2,6 +2,25 @@
 
 Todos los cambios relevantes del proyecto. El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
+## [0.2.1] - 2026-10-04
+
+Mejoras a partir de la prueba con dos agentes OpenCode (big-pickle y nemotron-3-ultra-free) y del análisis de calidad del índice M8ven.
+
+### Añadido
+
+- Las 16 herramientas MCP declaran las cuatro anotaciones (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) y un `inputSchema`, como piden los directorios de servidores MCP.
+- Si alguien responde una pregunta dirigida a otro agente (por ejemplo, un humano desde el dashboard), el hub también se lo comunica a ese agente.
+- Al reclamar una tarea, el agente recibe sus requisitos y el recordatorio de bloquear los archivos antes de editarlos.
+
+### Cambiado
+
+- El protocolo obliga al revisor a leer la tarea y comprobar **cada requisito de su descripción**, no solo que el código funcione. En la prueba se aprobó una CLI que no aceptaba el formato pedido.
+- El protocolo insiste en bloquear los archivos siempre, también en cambios pequeños.
+
+### Seguridad
+
+- `init --write` ya no ejecuta comandos a través de una shell. Si `claude` no es un ejecutable directo (por ejemplo, un `.cmd` de npm en Windows), muestra el comando para ejecutarlo a mano.
+
 ## [0.2.0] - 2026-10-01
 
 Versión basada en pruebas reales con varios agentes (OpenCode y Gemini CLI) trabajando a la vez sobre el mismo repositorio.
@@ -66,5 +85,6 @@ Primera versión pública.
 - `multi-agents init` para Claude Code, Codex, OpenCode, Gemini CLI, Cursor, Cline, Goose y cualquier cliente MCP.
 - Flujos de trabajo por proyecto: `github`, `git` y `none`.
 
+[0.2.1]: https://github.com/toroc07/multi-agents/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/toroc07/multi-agents/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/toroc07/multi-agents/releases/tag/v0.1.0
