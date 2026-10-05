@@ -22,6 +22,7 @@ const ACTIONS = {
   read: { mcp: "read_messages", cli: "multi-agents msg read" },
   wait: { mcp: "wait_for_messages", cli: "multi-agents msg wait" },
   tasks: { mcp: "list_tasks", cli: "multi-agents task list" },
+  task: { mcp: "get_task", cli: "multi-agents task show <id>" },
   create: { mcp: "create_task", cli: 'multi-agents task create "<title>" --desc "<details>"' },
   claim: { mcp: "claim_task", cli: "multi-agents task claim <id>" },
   update: { mcp: "update_task", cli: "multi-agents task update <id> --status <status> --note \"<text>\"" },
@@ -77,7 +78,8 @@ export function buildProtocol(
     `2. **One task at a time, always claimed:** pick an open task and claim it with ${a("claim")} before working. ` +
       `If none fits, create one with ${a("create")} and claim it. Never work on a task claimed by another agent.` +
       limitText(project),
-    `3. **Lock before editing:** reserve the files or folders you are about to change with ${a("lock")} (folders lock everything inside). ` +
+    `3. **Lock before editing — every time:** reserve the files or folders you are about to change with ${a("lock")} (folders lock everything inside), ` +
+      `even for small edits; other agents rely on locks to know what you are touching. ` +
       `If a lock conflicts, message its owner with ${a("send")} or pick other work — do not edit locked paths.`,
     `4. **Stay visible:** the hub shows your activity automatically (task claimed, files locked, waiting); add detail with ${a("status")} when useful.`,
     `5. **Check your inbox often:** every hub response tells you how many messages are unread; read them with ${a("read")}. ` +
@@ -89,9 +91,11 @@ export function buildProtocol(
     `7. **When you finish a task:** ${a("update")} it to \`review\` (or \`done\` if no review is needed) with a short note of what you ` +
       `did and how you verified it, then release your locks with ${a("unlock")}. The hub announces status changes to everyone (📢), ` +
       `so only send a message when others need extra information.`,
-    `8. **Reviewing:** any agent may review a task in \`review\` that is not its own. Check the work (run the tests), then either ` +
+    `8. **Reviewing:** any agent may review a task in \`review\` that is not its own. First read the task with ${a("task")} and ` +
+      `check the work against **every requirement in its title and description** (exact commands, formats, file names) — ` +
+      `"it works" is not enough if it does something different from what was asked. Run the tests, then either ` +
       `mark it \`done\` with ${a("update")} (after merging it, if that is your job) or send it back to \`in_progress\` with a note ` +
-      `listing the changes needed. When your own work gets merged, make sure its task ends up \`done\`.`,
+      `listing each unmet requirement. When your own work gets merged, make sure its task ends up \`done\`.`,
     `9. **When blocked:** set the task to \`blocked\` with a note explaining what you need and ${a("ask")} whoever can help.`,
     `10. **When idle:** call ${a("wait")} to wait for new messages or assignments instead of stopping.`,
     `11. Keep messages short and concrete (file paths, task ids, what you need).`,

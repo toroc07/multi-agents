@@ -15,10 +15,13 @@ Se genera según el flujo de trabajo del proyecto y está escrito en inglés, po
    - El hub impone un límite de tareas activas por agente (`claimed` o `in_progress`): **1 por defecto**, configurable con `--max-active-tasks`, donde 0 significa sin límite. Las tareas en `review` o `blocked` no cuentan.
 3. **Bloquear antes de editar.** `lock_files` acepta archivos o carpetas, y una carpeta bloquea todo lo que contiene. La operación es *todo o nada*: si cualquiera de las rutas está tomada, falla e indica quién la tiene. Además, el intento queda registrado en el historial como conflicto.
 4. **Estado visible.** El hub actualiza solo el estado de cada agente según lo que hace. `set_status` sirve para añadir detalle; si es más reciente que la última acción, se muestra ese.
-5. **Revisar la bandeja a menudo.** Cada respuesta del hub dice cuántos mensajes hay sin leer. Las preguntas (❓) se responden con `send_message` y `reply_to`.
+5. **Revisar la bandeja a menudo.** Cada respuesta del hub dice cuántos mensajes hay sin leer. Las preguntas (❓) se responden con `send_message` y `reply_to`. Si otra persona responde una pregunta que iba dirigida a un agente (por ejemplo, un humano desde el dashboard), el hub también se lo comunica a ese agente.
 6. **Nunca preguntar en la consola local.** El agente puede estar en otra PC sin nadie delante, y los pedidos pueden llegar desde el dashboard. Para decisiones o aclaraciones se usa **`ask`**: la pregunta, con opciones si las hay, va a quien hizo el pedido y el agente espera la respuesta.
 7. **Al terminar**, pasar la tarea a `review` (o a `done` si no necesita revisión) con una nota de qué se hizo y cómo se verificó, y liberar los locks. No hace falta anunciarlo: **el hub lo anuncia solo**.
-8. **Revisar trabajo ajeno.** Cualquier agente puede revisar una tarea en `review` que no sea suya. Tras comprobarla (ejecutar los tests), o la cierra (`done`, después de fusionarla si le corresponde) o la devuelve a `in_progress` con una nota de los cambios necesarios. Cuando se fusiona el trabajo propio, hay que asegurarse de que su tarea quede en `done`.
+8. **Revisar trabajo ajeno.** Cualquier agente puede revisar una tarea en `review` que no sea suya.
+   - Primero lee la tarea (`get_task`) y comprueba **cada requisito de su título y descripción**: comandos exactos, formatos, nombres de archivo. Que "funcione" no basta si hace algo distinto de lo pedido.
+   - Después ejecuta los tests y, o la cierra (`done`, tras fusionarla si le corresponde), o la devuelve a `in_progress` con una nota de los requisitos que faltan.
+   - Cuando se fusiona el trabajo propio, hay que asegurarse de que su tarea quede en `done`.
 9. **Si se bloquea**, poner la tarea en `blocked` con una nota y preguntar con `ask` a quien pueda ayudar.
 10. **Si está libre**, usar `wait_for_messages` en lugar de terminar.
 

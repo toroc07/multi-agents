@@ -140,6 +140,26 @@ describe("questions", () => {
     expect(state.askQuestion(P, "carol", { body: "Details?" }).to).toBe("alice");
   });
 
+  it("tell the addressee when someone else answers on its behalf", () => {
+    state.identify(P, "carlos", { kind: "human" });
+    const q = state.askQuestion(P, "alice", { to: "bob", body: "Who applies the formatting?" });
+    state.readMessages(P, "bob");
+    state.sendMessage(P, "carlos", undefined, "bob does it in his branch", q.id);
+    expect(state.readMessages(P, "alice").map((m) => m.body)).toEqual(["bob does it in his branch"]);
+    const forBob = state.readMessages(P, "bob");
+    expect(forBob).toHaveLength(1);
+    expect(forBob[0]).toMatchObject({ kind: "event", to: "bob", actor: "carlos" });
+    expect(forBob[0]!.body).toContain(`question #${q.id} that alice asked you`);
+    expect(forBob[0]!.body).toContain("bob does it in his branch");
+  });
+
+  it("do not duplicate the answer when the addressee answers itself", () => {
+    const q = state.askQuestion(P, "alice", { to: "bob", body: "?" });
+    state.readMessages(P, "bob");
+    state.sendMessage(P, "bob", undefined, "yes", q.id);
+    expect(state.readMessages(P, "bob")).toHaveLength(0);
+  });
+
   it("reject replies to things that are not questions", () => {
     const m = state.sendMessage(P, "alice", "bob", "hi");
     expectHubError(() => state.sendMessage(P, "bob", undefined, "re", m.id), 404);
@@ -369,6 +389,8 @@ describe("protocol", () => {
     expect(github).toContain("gh pr create");
     expect(github).toContain("`claim_task`");
     expect(github).toContain("Never ask in your local console");
+    expect(github).toContain("every requirement in its title and description");
+    expect(github).toContain("Lock before editing — every time");
     expect(github).toContain("`ask`");
 
     state.upsertProject({ id: P, workflow: "none" });

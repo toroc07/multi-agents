@@ -119,7 +119,7 @@ export async function runAgentCommand(cfg: AgentConfig, command: string, args: s
           );
         }
         case "claim":
-          return out(await client.claimTask(int(rest[0], "task id")), fmtClaimed);
+          return out(await client.claimTask(int(rest[0], "task id")), (t) => fmtClaimed(t, "cli"));
         case "update": {
           const id = int(rest[0], "task id");
           return out(
