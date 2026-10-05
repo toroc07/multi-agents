@@ -9,6 +9,33 @@ import { VERSION } from "../version.js";
 import { HubClient, type HubResponse } from "./client.js";
 import { fmtAgents, fmtAskResult, fmtClaimed, fmtLocks, fmtMessages, fmtTask, fmtTaskLine, fmtTasks, fmtUnread } from "./format.js";
 
+/**
+ * MCP behaviour hints for every tool, all four set explicitly. Every tool only
+ * talks to this project's hub (a closed system), so none is open-world, and
+ * none deletes data. Reads that mark messages as read are not read-only.
+ */
+const hints = (readOnlyHint: boolean, idempotentHint: boolean) =>
+  ({ readOnlyHint, destructiveHint: false, idempotentHint, openWorldHint: false }) as const;
+
+const TOOL_ANNOTATIONS = {
+  whoami: hints(true, true),
+  get_project: hints(true, true),
+  list_agents: hints(true, true),
+  set_status: hints(false, true),
+  send_message: hints(false, false),
+  ask: hints(false, false),
+  read_messages: hints(false, false),
+  wait_for_messages: hints(false, false),
+  list_tasks: hints(true, true),
+  get_task: hints(true, true),
+  create_task: hints(false, false),
+  claim_task: hints(false, true),
+  update_task: hints(false, false),
+  lock_files: hints(false, true),
+  unlock_files: hints(false, true),
+  list_locks: hints(true, true),
+};
+
 const HEARTBEAT_MS = 15_000;
 const MAX_WAIT_S = 300;
 
@@ -40,9 +67,10 @@ export async function runMcpBridge(overrides: Partial<AgentConfig> = {}, configF
   server.registerTool(
     "whoami",
     {
+      annotations: TOOL_ANNOTATIONS.whoami,
+      inputSchema: {},
       title: "Who am I",
       description: "Show your agent identity, the project, its workflow and your suggested branch.",
-      annotations: { readOnlyHint: true },
     },
     () =>
       run(
@@ -60,9 +88,10 @@ export async function runMcpBridge(overrides: Partial<AgentConfig> = {}, configF
   server.registerTool(
     "get_project",
     {
+      annotations: TOOL_ANNOTATIONS.get_project,
+      inputSchema: {},
       title: "Project protocol",
       description: "Get the project's settings and the full collaboration protocol all agents must follow.",
-      annotations: { readOnlyHint: true },
     },
     () => run(() => client.getProject("mcp"), ({ protocol }) => protocol),
   );
@@ -70,9 +99,10 @@ export async function runMcpBridge(overrides: Partial<AgentConfig> = {}, configF
   server.registerTool(
     "list_agents",
     {
+      annotations: TOOL_ANNOTATIONS.list_agents,
+      inputSchema: {},
       title: "List agents",
       description: "List the agents in this project (● online / ○ offline) with their tool, model, branch and current status.",
-      annotations: { readOnlyHint: true },
     },
     () => run(() => client.listAgents(), (agents) => fmtAgents(agents, cfg.agentName)),
   );
@@ -80,6 +110,7 @@ export async function runMcpBridge(overrides: Partial<AgentConfig> = {}, configF
   server.registerTool(
     "set_status",
     {
+      annotations: TOOL_ANNOTATIONS.set_status,
       title: "Set my status",
       description:
         "Optionally add detail about what you are doing (shown to other agents and on the dashboard). The hub already tracks " +
@@ -95,6 +126,7 @@ export async function runMcpBridge(overrides: Partial<AgentConfig> = {}, configF
   server.registerTool(
     "send_message",
     {
+      annotations: TOOL_ANNOTATIONS.send_message,
       title: "Send message",
       description:
         "Send a message to another agent or human by name, or to \"all\" to broadcast. " +
@@ -115,6 +147,7 @@ export async function runMcpBridge(overrides: Partial<AgentConfig> = {}, configF
   server.registerTool(
     "ask",
     {
+      annotations: TOOL_ANNOTATIONS.ask,
       title: "Ask a question",
       description:
         "Ask a question or request a decision THROUGH THE HUB and wait for the answer. Use this instead of asking in your " +
@@ -147,6 +180,8 @@ export async function runMcpBridge(overrides: Partial<AgentConfig> = {}, configF
   server.registerTool(
     "read_messages",
     {
+      annotations: TOOL_ANNOTATIONS.read_messages,
+      inputSchema: {},
       title: "Read messages",
       description: "Return your unread messages (direct and broadcasts) and mark them as read.",
     },
@@ -156,6 +191,7 @@ export async function runMcpBridge(overrides: Partial<AgentConfig> = {}, configF
   server.registerTool(
     "wait_for_messages",
     {
+      annotations: TOOL_ANNOTATIONS.wait_for_messages,
       title: "Wait for messages",
       description:
         "Block until a new message arrives (or the timeout passes), then return it. Use this when you are idle " +
@@ -180,13 +216,13 @@ export async function runMcpBridge(overrides: Partial<AgentConfig> = {}, configF
   server.registerTool(
     "list_tasks",
     {
+      annotations: TOOL_ANNOTATIONS.list_tasks,
       title: "List tasks",
       description: "List tasks on the shared board, optionally filtered by status or assignee.",
       inputSchema: {
         status: z.enum(TASK_STATUSES).optional(),
         assignee: z.string().optional().describe("Agent name; use your own name to see your tasks"),
       },
-      annotations: { readOnlyHint: true },
     },
     ({ status, assignee }) => run(() => client.listTasks({ status, assignee }), fmtTasks),
   );
@@ -194,10 +230,10 @@ export async function runMcpBridge(overrides: Partial<AgentConfig> = {}, configF
   server.registerTool(
     "get_task",
     {
+      annotations: TOOL_ANNOTATIONS.get_task,
       title: "Task details",
       description: "Show a task with its full description and notes.",
       inputSchema: { id: z.number().int().positive() },
-      annotations: { readOnlyHint: true },
     },
     ({ id }) => run(() => client.getTask(id), fmtTask),
   );
@@ -205,6 +241,7 @@ export async function runMcpBridge(overrides: Partial<AgentConfig> = {}, configF
   server.registerTool(
     "create_task",
     {
+      annotations: TOOL_ANNOTATIONS.create_task,
       title: "Create task",
       description: "Add a task to the shared board. Optionally assign it to an agent. The hub announces it to everyone.",
       inputSchema: {
@@ -220,23 +257,26 @@ export async function runMcpBridge(overrides: Partial<AgentConfig> = {}, configF
   server.registerTool(
     "claim_task",
     {
+      annotations: TOOL_ANNOTATIONS.claim_task,
       title: "Claim task",
       description:
         "Take ownership of an open task before working on it. Fails if another agent already has it, or if you already " +
         "have an active task (finish or release it first). Returns the branch to work on.",
       inputSchema: { id: z.number().int().positive() },
     },
-    ({ id }) => run(() => client.claimTask(id), fmtClaimed),
+    ({ id }) => run(() => client.claimTask(id), (t) => fmtClaimed(t, "mcp")),
   );
 
   server.registerTool(
     "update_task",
     {
+      annotations: TOOL_ANNOTATIONS.update_task,
       title: "Update task",
       description:
         "Update a task you own: status (in_progress, review, done, blocked, or open to release it), a progress note, " +
         "your branch, or the review link (PR/MR URL). As a reviewer you may also move ANY task that is in review to done " +
-        "(approved/merged) or back to in_progress (changes requested, explain in the note). The hub announces status changes.",
+        "(approved/merged) or back to in_progress (changes requested, explain in the note). Before approving, read the task " +
+        "with get_task and check every requirement in its description, not just that the code runs. The hub announces status changes.",
       inputSchema: {
         id: z.number().int().positive(),
         status: z.enum(TASK_STATUSES).optional(),
@@ -253,6 +293,7 @@ export async function runMcpBridge(overrides: Partial<AgentConfig> = {}, configF
   server.registerTool(
     "lock_files",
     {
+      annotations: TOOL_ANNOTATIONS.lock_files,
       title: "Lock files",
       description:
         "Reserve files or folders (paths relative to the project root) before editing them so other agents don't touch them. " +
@@ -271,6 +312,7 @@ export async function runMcpBridge(overrides: Partial<AgentConfig> = {}, configF
   server.registerTool(
     "unlock_files",
     {
+      annotations: TOOL_ANNOTATIONS.unlock_files,
       title: "Unlock files",
       description: "Release your locks on the given paths, or all your locks if no paths are given.",
       inputSchema: { paths: z.array(z.string()).max(100).optional() },
@@ -285,9 +327,10 @@ export async function runMcpBridge(overrides: Partial<AgentConfig> = {}, configF
   server.registerTool(
     "list_locks",
     {
+      annotations: TOOL_ANNOTATIONS.list_locks,
+      inputSchema: {},
       title: "List locks",
       description: "Show every active file lock in the project and who owns it.",
-      annotations: { readOnlyHint: true },
     },
     () => run(() => client.listLocks(), fmtLocks),
   );

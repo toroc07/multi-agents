@@ -88,8 +88,13 @@ export function fmtTaskLine(t: Task): string {
   return parts.join(" · ");
 }
 
-export function fmtClaimed(t: Task): string {
-  return `Claimed ${fmtTaskLine(t)}${t.branch ? `\nWork on branch ${t.branch} (create it from the latest base branch if it does not exist).` : ""}`;
+export function fmtClaimed(t: Task, iface: Iface = "mcp"): string {
+  const lock = iface === "mcp" ? "lock_files" : "`multi-agents lock <paths>`";
+  const lines = [`Claimed ${fmtTaskLine(t)}`];
+  if (t.description) lines.push(`Requirements: ${t.description}`);
+  if (t.branch) lines.push(`Work on branch ${t.branch} (create it from the latest base branch if it does not exist).`);
+  lines.push(`Before editing any file, lock it with ${lock}; release your locks when you move the task to review.`);
+  return lines.join("\n");
 }
 
 export function fmtTasks(tasks: Task[]): string {

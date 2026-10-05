@@ -202,15 +202,23 @@ const WRITERS: Partial<Record<ClientId, Writer>> = {
   cursor: (launch, root) => projectJson(root, join(".cursor", "mcp.json"), "mcpServers", launch),
 };
 
+/**
+ * Runs a CLI without a shell, so no argument is ever interpreted by one. On
+ * Windows that only finds real executables (e.g. claude.exe from the native
+ * installer); an npm .cmd shim is reported instead, and the caller prints the
+ * command for the user to run.
+ */
 function run(command: string, args: string[], cwd: string, ignoreErrors = false): void {
-  let res = spawnSync(command, args, { cwd, encoding: "utf8" });
-  // npm-installed CLIs are .cmd shims on Windows, which only run through a shell.
-  if ((res.error as NodeJS.ErrnoException | undefined)?.code === "ENOENT" && process.platform === "win32") {
-    const quoted = [command, ...args].map((a) => (/[\s"]/.test(a) ? `"${a.replace(/"/g, '\\"')}"` : a)).join(" ");
-    res = spawnSync(quoted, { cwd, encoding: "utf8", shell: true });
-  }
+  const res = spawnSync(command, args, { cwd, encoding: "utf8", shell: false });
   if (ignoreErrors) return;
-  if (res.error) throw new ConfigEditError(`could not run "${command}": ${res.error.message}. Is it installed and on PATH?`);
+  if ((res.error as NodeJS.ErrnoException | undefined)?.code === "ENOENT") {
+    throw new ConfigEditError(
+      `"${command}" was not found as an executable on PATH` +
+        (process.platform === "win32" ? " (npm-installed .cmd shims cannot be run without a shell)" : "") +
+        ". Run the command below yourself",
+    );
+  }
+  if (res.error) throw new ConfigEditError(`could not run "${command}": ${res.error.message}`);
   if (res.status !== 0) throw new ConfigEditError(`"${command} ${args.slice(0, 2).join(" ")}" failed: ${(res.stderr || res.stdout).trim()}`);
 }
 

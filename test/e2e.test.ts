@@ -90,6 +90,15 @@ describe("end to end", () => {
       ]),
     );
     expect(alice.getInstructions()).toContain("agent/alice");
+    // Every tool declares an input schema and all four behaviour hints (directories reject tools without them).
+    for (const tool of tools) {
+      expect(tool.inputSchema.type, tool.name).toBe("object");
+      for (const hint of ["readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint"] as const) {
+        expect(typeof tool.annotations?.[hint], `${tool.name}.${hint}`).toBe("boolean");
+      }
+    }
+    expect(tools.find((t) => t.name === "list_tasks")?.annotations?.readOnlyHint).toBe(true);
+    expect(tools.find((t) => t.name === "read_messages")?.annotations?.readOnlyHint).toBe(false);
     expect((await call(bob, "list_agents")).text).toMatch(/● alice/);
   });
 
@@ -201,6 +210,7 @@ describe("end to end", () => {
     const id = Number(/#(\d+)/.exec(created.text)![1]);
     const claimed = await call(bob, "claim_task", { id });
     expect(claimed.text).toContain(`Work on branch agent/bob/task-${id}`);
+    expect(claimed.text).toContain("Before editing any file, lock it with lock_files");
 
     const agents = await cli("carol", "agents");
     expect(agents.stdout).toContain(`Working on #${id} Add modulo operator`);

@@ -357,6 +357,19 @@ export class HubState {
     if (question && !question.answer) {
       question.answer = { by: from, body, at: message.createdAt, messageId: message.id };
       this.record(ps, { actor: from, type: "question.answered", questionId: question.id, target: question.from });
+      // Someone (e.g. a human on the dashboard) answered on behalf of the agent the question was for:
+      // that agent must learn the decision too, or it keeps working without it.
+      const addressee = question.to;
+      if (addressee !== BROADCAST && addressee !== from && addressee !== question.from && ps.agents[addressee]) {
+        const asked = question.body.length > 200 ? `${question.body.slice(0, 200)}…` : question.body;
+        this.pushMessage(ps, {
+          from: HUB_SENDER,
+          to: addressee,
+          kind: "event",
+          actor: from,
+          body: `${from} answered on your behalf the question #${question.id} that ${question.from} asked you ("${asked}"): ${body}`,
+        });
+      }
     }
     return message;
   }
